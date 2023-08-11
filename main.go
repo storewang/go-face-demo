@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"face_demo/balance"
+
 	"github.com/Kagami/go-face"
 	"github.com/SimonWang00/goeureka"
 	"github.com/gin-gonic/gin"
@@ -30,17 +32,41 @@ var labels = []string{
 }
 
 func main() {
-	fmt.Println("Face Recoginition...")
+	log.Println("Face Recoginition...")
 	rec, err := face.NewRecognizer(modelDir)
 	if err != nil {
 		fmt.Println("cannot initialize recongnizer")
 	}
 	defer rec.Close()
 
-	fmt.Println("Recognizer initialized")
+	log.Println("Recognizer initialized")
 
 	// 注册服务
 	goeureka.RegisterClient("http://10.254.160.81:8080", "192.168.3.92", "go-test-01", "8088", "43", nil)
+
+	ins, err := goeureka.GetServiceInstances("yuxiaor-server")
+	if err != nil {
+		fmt.Println("获取服务实例失败")
+	}
+	log.Println("获取服务实例====>")
+	hosts := make([]string, 0)
+	for _, svc := range ins {
+		log.Println("=>id:", svc.InstanceId)
+		log.Println("=>app:", svc.App)
+		log.Println("=>host:", svc.HostName)
+		log.Println("=>port:", svc.Port)
+		log.Println("=>ip:", svc.IpAddr)
+		log.Println("status:", svc.Status)
+		host := fmt.Sprintf("%s%s%d", svc.IpAddr, ":", svc.Port.Port)
+
+		hosts = append(hosts, host)
+	}
+	log.Println("获取服务实例<====", hosts)
+
+	lb, err := balance.Build(balance.R2Balancer, hosts)
+	if err != nil {
+		log.Fatalf("初始化均衡负载器失败: %v", err)
+	}
 
 	// 调用该方法，传入路径。返回面部数量和任何错误
 	faces, err := rec.RecognizeFile(imagesDir + "/men-faces.jpeg")
@@ -48,7 +74,7 @@ func main() {
 		log.Fatalf("无法识别: %v", err)
 	}
 	// 打印人脸数量
-	fmt.Println("图片人脸数量: ", len(faces))
+	log.Println("图片人脸数量: ", len(faces))
 
 	// 根据样例生成模型数据
 	var samples []face.Descriptor
@@ -67,7 +93,8 @@ func main() {
 	r := gin.Default()
 	// 2. 绑定路由规则，执行的函数
 	r.GET("/", func(ctx *gin.Context) {
-		ctx.String(http.StatusOK, "Hello World!")
+		host, _ := lb.Balance("")
+		ctx.String(http.StatusOK, "Hello World!"+host)
 	})
 	r.GET("/info", func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "Hello go-test-01!")
