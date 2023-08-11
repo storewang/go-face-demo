@@ -153,7 +153,7 @@ func RecognizePeople(rec *face.Recognizer, file string) string {
 func RecognizePeople4Memory(rec *face.Recognizer, img []byte) string {
 	people, err := rec.RecognizeSingle(img)
 	if err != nil {
-		log.Println("无法识别: %v", err)
+		log.Fatalf("无法识别: %v", err)
 		return "无法识别"
 	}
 	if people == nil {
