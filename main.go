@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Kagami/go-face"
+	"github.com/SimonWang00/goeureka"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,6 +39,9 @@ func main() {
 
 	fmt.Println("Recognizer initialized")
 
+	// 注册服务
+	goeureka.RegisterClient("http://10.254.160.81:8080", "192.168.3.92", "go-test-01", "8088", "43", nil)
+
 	// 调用该方法，传入路径。返回面部数量和任何错误
 	faces, err := rec.RecognizeFile(imagesDir + "/men-faces.jpeg")
 	if err != nil {
@@ -64,6 +68,9 @@ func main() {
 	// 2. 绑定路由规则，执行的函数
 	r.GET("/", func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "Hello World!")
+	})
+	r.GET("/info", func(ctx *gin.Context) {
+		ctx.String(http.StatusOK, "Hello go-test-01!")
 	})
 
 	r.GET("/test", func(ctx *gin.Context) {
