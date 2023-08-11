@@ -51,14 +51,7 @@ func main() {
 	log.Println("获取服务实例====>")
 	hosts := make([]string, 0)
 	for _, svc := range ins {
-		log.Println("=>id:", svc.InstanceId)
-		log.Println("=>app:", svc.App)
-		log.Println("=>host:", svc.HostName)
-		log.Println("=>port:", svc.Port)
-		log.Println("=>ip:", svc.IpAddr)
-		log.Println("status:", svc.Status)
 		host := fmt.Sprintf("%s%s%d", svc.IpAddr, ":", svc.Port.Port)
-
 		hosts = append(hosts, host)
 	}
 	log.Println("获取服务实例<====", hosts)
