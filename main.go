@@ -8,10 +8,11 @@ import (
 
 func main() {
 	router := gin.New()
-	router.POST("/wechat", server.HandleWechat)
-	router.GET("/wechat", server.Verify)
+	router.POST("/wx/mp/callback", server.HandleWechat)
+	router.GET("/wx/mp/callback", server.Verify)
+	router.GET("/test", server.HandleChart)
 
 	cache.Init()
 	// 运行服务器
-	router.Run(":80")
+	router.Run(":8080")
 }

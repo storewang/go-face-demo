@@ -38,7 +38,7 @@ func HandleWechat(c *gin.Context) {
 		c.String(http.StatusOK, "暂不支持该操作哦，等后续升级~")
 		return
 	}
-
+	println("msg:", msgReceive.Content)
 	// 先从缓存获取
 	val, found := cache.GlobalCache.Get(msgReceive.Content)
 	if found {
@@ -49,7 +49,8 @@ func HandleWechat(c *gin.Context) {
 	} else {
 		cache.GlobalCache.Add(msgReceive.Content, "", time.Minute*5)
 		// 接入chatGPT处理文本消息
-		go Completions(msgReceive.Content, msgChan, errChan)
+		// gemini-pro
+		go GeminiCompletions(msgReceive.Content, msgChan, errChan)
 
 		// 处理
 		select {

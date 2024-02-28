@@ -17,6 +17,7 @@ func Verify(c *gin.Context) {
 	timestamp := c.Request.URL.Query().Get("timestamp")
 	nonce := c.Request.URL.Query().Get("nonce")
 	echoStr := c.Request.URL.Query().Get("echostr")
+	println(nonce, ",", timestamp)
 	if VerifySignature(signature, timestamp, nonce) {
 		c.String(http.StatusOK, echoStr)
 	} else {
@@ -28,6 +29,9 @@ func VerifySignature(signature, timestamp, nonce string) bool {
 	sortedStr := SortString(timestamp, nonce, config.WechatToken)
 	encodedStr := sha1.Sum([]byte(sortedStr))
 	encodedStrStr := hex.EncodeToString(encodedStr[:])
+	println(sortedStr)
+	println(signature, encodedStrStr)
+
 	return signature == encodedStrStr
 }
 
