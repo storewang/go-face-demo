@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"face_demo/balance"
+	"face_demo/grcode"
 
 	"github.com/Kagami/go-face"
 	"github.com/SimonWang00/goeureka"
@@ -32,6 +33,21 @@ var labels = []string{
 }
 
 func main() {
+	// registerTest()
+
+	grcode := grcode.QrcodeTool{FileName: "qr2.png"}
+	//grcode.Content = "测试二维码内1111容。。。。。。。"
+
+	// 生成
+	//_ = grcode.Encode(100, 100)
+
+	// 识别
+	grcode.Qrcode = grcode.FileName
+	_ = grcode.Decode()
+	fmt.Println("二维码内容为: ", grcode.Content)
+}
+
+func registerTest() {
 	log.Println("Face Recoginition...")
 	rec, err := face.NewRecognizer(modelDir)
 	if err != nil {
@@ -120,12 +136,6 @@ func main() {
 
 	// 3. 监听端口，默认8080
 	r.Run(":8088")
-
-	// 识别图片人脸
-	//RecognizePeople(rec, imagesDir+"/jay.jpeg")
-	//RecognizePeople(rec, imagesDir+"/linjunjie.jpeg")
-	//RecognizePeople(rec, imagesDir+"/taozhe.jpeg")
-
 }
 
 func RecognizePeople(rec *face.Recognizer, file string) string {
