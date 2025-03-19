@@ -68,7 +68,7 @@ func GeminiCompletions(question string, msgChan chan string, errChan chan error)
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-pro")
+	model := client.GenerativeModel("gemini-2.0-flash")
 	resp, err := model.GenerateContent(ctx, genai.Text(question))
 	if err != nil {
 		log.Printf("ChatCompletion error: %v", err)
