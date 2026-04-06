@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+data/
+models/
+*.egg-info/
+.ruff_cache/
+.mypy_cache/
+.git/
+.env
+*.log
+nohup.out
