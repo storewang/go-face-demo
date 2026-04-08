@@ -6,24 +6,32 @@ Phase 3 性能优化版本
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from secure import SecureHeaders
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.config import settings
 from app.api import api_router
 from app.api.websocket import websocket_endpoint
 from app.logging_config import setup_logging
+from app.rate_limit import limiter
 from app.api.health import router as health_router
 
 # 应用启动时初始化日志
 setup_logging(settings.DEBUG)
-
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
-secure_headers = SecureHeaders()
+# 安全头中间件
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
 
 
 def create_app() -> FastAPI:
@@ -63,11 +71,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.middleware("http")
-    async def add_secure_headers(request: Request, call_next):
-        response = await call_next(request)
-        secure_headers.starlette(response)
-        return response
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.on_event("startup")
     async def startup_event():
@@ -99,10 +103,4 @@ async def ws_face_stream(websocket: WebSocket):
 
 @app.get("/")
 def root():
-    return {"message": "Face Scan API", "version": "2.0.0"}
-
-
-@app.get("/health")
-def health_check():
-    """兼容旧版 /health 端点"""
-    return {"status": "healthy", "version": "2.0.0"}
+    return {"message": "Face Scan API", "version": "2.1.0"}

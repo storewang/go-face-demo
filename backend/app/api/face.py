@@ -14,7 +14,7 @@ from app.services.face_service import face_service
 from app.services.liveness_service import get_liveness_service
 from app.utils.face_utils import FaceUtils
 from app.utils.validators import validate_image, sanitize_filename
-from app.main import limiter
+from app.rate_limit import limiter
 
 router = APIRouter(prefix="/api/face", tags=["人脸识别"])
 

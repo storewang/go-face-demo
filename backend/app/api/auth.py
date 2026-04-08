@@ -6,7 +6,7 @@ import logging
 
 from app.config import settings
 from app.utils.auth import verify_password, hash_password, create_access_token, verify_token
-from app.main import limiter
+from app.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["认证"])

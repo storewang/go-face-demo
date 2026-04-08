@@ -3,6 +3,7 @@
 """
 from fastapi import APIRouter, Response
 from datetime import datetime
+from sqlalchemy import text
 from app.config import settings
 
 router = APIRouter(tags=["健康检查"])
@@ -16,7 +17,7 @@ async def health_check():
     try:
         from app.database import SessionLocal
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         checks["database"] = {"status": "healthy"}
     except Exception as e:
@@ -66,7 +67,7 @@ async def readiness_check():
     try:
         from app.database import SessionLocal
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         return {"ready": True}
     except Exception:

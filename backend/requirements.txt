@@ -29,9 +29,8 @@ python-dateutil==2.8.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 
-# Security - 速率限制与安全头
+# Security - 速率限制
 slowapi==0.1.9
-starlette-secure-headers==0.3.0
 
 # ===== 运维增强 =====
 # 结构化日志
