@@ -29,6 +29,8 @@ class AttendanceCreate(AttendanceBase):
 
 class AttendanceResponse(AttendanceBase):
     id: int
+    device_id: Optional[int] = None
+    device_name: Optional[str] = None
     snapshot_path: Optional[str] = None
     created_at: datetime
 

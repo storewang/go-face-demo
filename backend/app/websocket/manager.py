@@ -14,6 +14,10 @@ class ConnectionManager:
             "frames": [],
             "face_locations": [],
             "last_result_time": 0,
+            # 设备绑定字段
+            "device_id": None,
+            "device_code": None,
+            "device_name": None,
         }
 
     def disconnect(self, websocket: WebSocket):

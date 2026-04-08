@@ -5,7 +5,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from app.database import get_db
-from app.models import User, AttendanceLog, ActionType, ResultType
+from app.models import User, AttendanceLog, ActionType, ResultType, Device
 from app.schemas.attendance import (
     AttendanceResponse,
     AttendanceListResponse,
@@ -29,9 +29,13 @@ def list_attendance(
     employee_id: Optional[str] = Query(None, description="工号筛选"),
     action_type: Optional[str] = Query(None, description="类型: CHECK_IN/CHECK_OUT"),
     result: Optional[str] = Query(None, description="结果: SUCCESS/FAILED"),
+    device_id: Optional[int] = Query(None, description="设备ID筛选"),
     db: Session = Depends(get_db),
 ):
-    query = db.query(AttendanceLog)
+    # 使用 left join 关联 Device 表获取设备名称
+    query = db.query(AttendanceLog).outerjoin(
+        Device, AttendanceLog.device_id == Device.id
+    )
 
     if start_date:
         start = datetime.strptime(start_date, "%Y-%m-%d")
@@ -50,14 +54,42 @@ def list_attendance(
     if result:
         query = query.filter(AttendanceLog.result == result)
 
+    if device_id:
+        query = query.filter(AttendanceLog.device_id == device_id)
+
     query = query.order_by(AttendanceLog.created_at.desc())
 
     total = query.count()
     offset = (page - 1) * page_size
     records = query.offset(offset).limit(page_size).all()
 
+    # 构建 AttendanceResponse 列表，添加 device_name
+    items = []
+    for record in records:
+        # 查询设备名称
+        device_name = None
+        if record.device_id:
+            device = db.query(Device).filter(Device.id == record.device_id).first()
+            if device:
+                device_name = device.name
+        
+        record_dict = {
+            "id": record.id,
+            "user_id": record.user_id,
+            "employee_id": record.employee_id,
+            "name": record.name,
+            "action_type": record.action_type,
+            "confidence": record.confidence,
+            "result": record.result,
+            "device_id": record.device_id,
+            "device_name": device_name,
+            "snapshot_path": record.snapshot_path,
+            "created_at": record.created_at,
+        }
+        items.append(AttendanceResponse(**record_dict))
+
     return AttendanceListResponse(
-        items=[AttendanceResponse.model_validate(r) for r in records],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,

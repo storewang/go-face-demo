@@ -11,7 +11,7 @@ from app.services.face_service import face_service
 from app.services.liveness_service import get_liveness_service
 from app.services.notification_service import notification_service
 from app.database import SessionLocal
-from app.models import AttendanceLog, ActionType, ResultType
+from app.models import AttendanceLog, ActionType, ResultType, Device
 from app.config import settings
 from app.utils.face_utils import FaceUtils
 import cv2
@@ -160,15 +160,21 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
                 ActionType.CHECK_OUT if today_records > 0 else ActionType.CHECK_IN
             )
 
-            record = AttendanceLog(
-                user_id=user["id"],
-                employee_id=user["employee_id"],
-                name=user["name"],
-                action_type=action_type,
-                confidence=confidence,
-                snapshot_path=snapshot_path,
-                result=ResultType.SUCCESS,
-            )
+            # 构建考勤记录，包含设备信息
+            record_data = {
+                "user_id": user["id"],
+                "employee_id": user["employee_id"],
+                "name": user["name"],
+                "action_type": action_type,
+                "confidence": confidence,
+                "snapshot_path": snapshot_path,
+                "result": ResultType.SUCCESS,
+            }
+            # 如果 session 中有设备信息，写入 device_id
+            if session.get("device_id"):
+                record_data["device_id"] = session["device_id"]
+            
+            record = AttendanceLog(**record_data)
             db.add(record)
             db.commit()
             
@@ -180,18 +186,24 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
             "下班打卡成功" if action_type == ActionType.CHECK_OUT else "上班打卡成功"
         )
 
+        # 构建响应数据，包含设备名称
+        result_data = {
+            "success": True,
+            "user": user,
+            "confidence": confidence,
+            "action": "door_open",
+            "action_type": action_type.value,
+            "message": f"{user['name']} {action_message}",
+        }
+        # 如果有设备信息，添加到响应中
+        if session.get("device_name"):
+            result_data["device_name"] = session["device_name"]
+
         await manager.send_json(
             websocket,
             {
                 "type": "result",
-                "data": {
-                    "success": True,
-                    "user": user,
-                    "confidence": confidence,
-                    "action": "door_open",
-                    "action_type": action_type.value,
-                    "message": f"{user['name']} {action_message}",
-                },
+                "data": result_data,
             },
         )
 
@@ -222,6 +234,49 @@ async def websocket_endpoint(websocket: WebSocket):
 
             data = await websocket.receive_text()
             message = json.loads(data)
+
+            # 处理设备注册消息
+            if message.get("type") == "register":
+                device_code = message.get("device_code")
+                if device_code:
+                    # 验证设备是否存在
+                    db = SessionLocal()
+                    try:
+                        device = db.query(Device).filter(Device.device_code == device_code).first()
+                        if not device:
+                            await manager.send_json(websocket, {
+                                "type": "error",
+                                "data": {"message": "设备不存在", "code": "DEVICE_NOT_FOUND"}
+                            })
+                            await websocket.close()
+                            return
+                        
+                        if device.status == 2:
+                            await manager.send_json(websocket, {
+                                "type": "error",
+                                "data": {"message": "设备已禁用", "code": "DEVICE_DISABLED"}
+                            })
+                            await websocket.close()
+                            return
+                        
+                        # 注册成功，将设备信息存入 session
+                        session["device_id"] = device.id
+                        session["device_code"] = device.device_code
+                        session["device_name"] = device.name
+                        
+                        log.info("device_registered", device_code=device_code, device_name=device.name)
+                        
+                        await manager.send_json(websocket, {
+                            "type": "registered",
+                            "data": {
+                                "device_id": device.id,
+                                "device_code": device.device_code,
+                                "device_name": device.name
+                            }
+                        })
+                    finally:
+                        db.close()
+                continue
 
             if message.get("type") == "frame":
                 frame_data = message.get("data", "")

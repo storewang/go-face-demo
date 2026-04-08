@@ -56,6 +56,21 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item label="设备">
+          <el-select
+            v-model="queryParams.device_id"
+            placeholder="全部"
+            clearable
+          >
+            <el-option
+              v-for="device in devices"
+              :key="device.id"
+              :label="device.name"
+              :value="device.id"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item>
           <el-button type="primary" @click="fetchRecords">
             <el-icon><Search /></el-icon>
@@ -104,6 +119,12 @@
               :color="getConfidenceColor(row.confidence)"
             />
             <span v-else>-</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="device_name" label="设备" width="120">
+          <template #default="{ row }">
+            {{ row.device_name || '-' }}
           </template>
         </el-table-column>
 
@@ -161,6 +182,9 @@
         <el-descriptions-item label="置信度">
           {{ currentRecord?.confidence ? (currentRecord.confidence * 100).toFixed(2) + '%' : '-' }}
         </el-descriptions-item>
+        <el-descriptions-item label="设备">
+          {{ currentRecord?.device_name || '-' }}
+        </el-descriptions-item>
         <el-descriptions-item label="打卡时间">
           {{ formatDateTime(currentRecord?.created_at) }}
         </el-descriptions-item>
@@ -174,12 +198,15 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Search, Refresh } from '@element-plus/icons-vue'
 import * as attendanceApi from '@/api/attendance'
+import * as deviceApi from '@/api/device'
 import type { AttendanceRecord } from '@/types/attendance'
+import type { Device } from '@/types/device'
 
 const loading = ref(false)
 const exporting = ref(false)
 const records = ref<AttendanceRecord[]>([])
 const total = ref(0)
+const devices = ref<Device[]>([])
 
 const dateRange = ref<string[]>([])
 const queryParams = reactive({
@@ -189,7 +216,8 @@ const queryParams = reactive({
   end_date: '',
   employee_id: '',
   action_type: '',
-  result: ''
+  result: '',
+  device_id: undefined as number | undefined
 })
 
 const detailVisible = ref(false)
@@ -207,7 +235,17 @@ onMounted(() => {
 
   handleDateChange(dateRange.value)
   fetchRecords()
+  loadDevices()
 })
+
+async function loadDevices() {
+  try {
+    const res = await deviceApi.getDevices()
+    devices.value = res.items || []
+  } catch (error) {
+    console.error('加载设备列表失败:', error)
+  }
+}
 
 function handleDateChange(val: string[] | null) {
   if (val && val.length === 2) {
@@ -242,6 +280,7 @@ function resetQuery() {
   queryParams.employee_id = ''
   queryParams.action_type = ''
   queryParams.result = ''
+  queryParams.device_id = undefined
 
   fetchRecords()
 }

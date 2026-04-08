@@ -30,6 +30,31 @@
         </div>
 
         <div class="controls">
+          <!-- 设备选择 -->
+          <div class="device-selector">
+            <el-select
+              v-model="selectedDeviceCode"
+              placeholder="选择设备（可选）"
+              clearable
+              :disabled="isStreaming"
+              style="width: 200px"
+            >
+              <el-option
+                v-for="device in devices"
+                :key="device.device_code"
+                :label="device.name"
+                :value="device.device_code"
+              >
+                <span>{{ device.name }}</span>
+                <el-tag v-if="device.is_online" type="success" size="small" style="margin-left: 8px">在线</el-tag>
+                <el-tag v-else type="info" size="small" style="margin-left: 8px">离线</el-tag>
+              </el-option>
+            </el-select>
+            <el-tag v-if="currentDeviceName" type="success" style="margin-left: 10px">
+              当前设备: {{ currentDeviceName }}
+            </el-tag>
+          </div>
+
           <el-button
             v-if="!isStreaming"
             type="primary"
@@ -148,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   VideoCamera,
@@ -159,6 +184,8 @@ import {
   Loading
 } from '@element-plus/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
+import * as deviceApi from '@/api/device'
+import type { Device } from '@/types/device'
 
 const videoRef = ref<HTMLVideoElement | null>(null)
 const overlayRef = ref<HTMLCanvasElement | null>(null)
@@ -171,12 +198,18 @@ const lastResult = ref<Record<string, unknown> | null>(null)
 const showDoorOpen = ref(false)
 const scanHistory = ref<Array<Record<string, unknown>>>([])
 
+// 设备相关
+const devices = ref<Device[]>([])
+const selectedDeviceCode = ref<string>('')
+const currentDeviceName = ref<string>('')
+
 const {
   isConnected,
   connect,
   disconnect,
   send,
-  onMessage
+  onMessage,
+  onRegistered
 } = useWebSocket()
 
 let stream: MediaStream | null = null
@@ -214,6 +247,16 @@ const confidenceColor = computed(() => {
   return '#F56C6C'
 })
 
+// 加载设备列表
+async function loadDevices() {
+  try {
+    const res = await deviceApi.getDevices()
+    devices.value = res.items || []
+  } catch (error) {
+    console.error('加载设备列表失败:', error)
+  }
+}
+
 async function startScanning() {
   isStarting.value = true
   statusMessage.value = '正在启动摄像头...'
@@ -229,7 +272,15 @@ async function startScanning() {
       await videoRef.value.play()
     }
 
-    await connect()
+    // 连接 WebSocket，如果选择了设备则传递 deviceCode
+    await connect(selectedDeviceCode.value || undefined)
+    
+    // 设置设备注册回调
+    onRegistered((device) => {
+      currentDeviceName.value = device.device_name
+      ElMessage.success(`已连接到设备: ${device.device_name}`)
+    })
+    
     onMessage(handleWebSocketMessage)
 
     isStreaming.value = true
@@ -262,6 +313,7 @@ function stopScanning() {
   isStreaming.value = false
   statusMessage.value = ''
   lastResult.value = null
+  currentDeviceName.value = ''
 
   ElMessage.info('识别已停止')
 }
@@ -351,6 +403,10 @@ function formatTime(date: Date): string {
 onBeforeUnmount(() => {
   stopScanning()
 })
+
+onMounted(() => {
+  loadDevices()
+})
 </script>
 
 <style scoped>
@@ -439,7 +495,14 @@ onBeforeUnmount(() => {
 
 .controls {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.device-selector {
+  display: flex;
+  align-items: center;
 }
 
 .result-section {

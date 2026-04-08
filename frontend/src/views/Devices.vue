@@ -38,9 +38,19 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="last_heartbeat" label="最后心跳" width="180">
+        <el-table-column prop="last_heartbeat" label="最后心跳" width="200">
           <template #default="{ row }">
-            {{ formatDateTime(row.last_heartbeat) }}
+            <div v-if="isOnline(row.last_heartbeat)" class="heartbeat-status online">
+              <el-tag type="success" size="small">在线</el-tag>
+              <span class="time-text">{{ formatRelativeTime(row.last_heartbeat) }}</span>
+            </div>
+            <div v-else-if="isRecentlyOffline(row.last_heartbeat)" class="heartbeat-status offline">
+              <el-tag type="warning" size="small">离线</el-tag>
+              <span class="time-text">{{ formatDateTime(row.last_heartbeat) }}</span>
+            </div>
+            <div v-else class="heartbeat-status never">
+              <el-tag type="info" size="small">从未连接</el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
@@ -106,11 +116,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import * as deviceApi from '@/api/device'
 import type { Device, DeviceCreate, DeviceUpdate } from '@/types/device'
+
+let refreshTimer: number | null = null
 
 const loading = ref(false)
 const devices = ref<Device[]>([])
@@ -255,8 +267,49 @@ async function handleDelete(row: Device) {
   }
 }
 
+// 检查设备是否在线（心跳在60秒内）
+function isOnline(lastHeartbeat?: string): boolean {
+  if (!lastHeartbeat) return false
+  const heartbeatTime = new Date(lastHeartbeat).getTime()
+  const now = Date.now()
+  return (now - heartbeatTime) <= 60 * 1000
+}
+
+// 检查设备是否最近离线（心跳超过60秒但不超过24小时）
+function isRecentlyOffline(lastHeartbeat?: string): boolean {
+  if (!lastHeartbeat) return false
+  const heartbeatTime = new Date(lastHeartbeat).getTime()
+  const now = Date.now()
+  const diff = now - heartbeatTime
+  return diff > 60 * 1000 && diff <= 24 * 60 * 60 * 1000
+}
+
+// 格式化相对时间
+function formatRelativeTime(lastHeartbeat?: string): string {
+  if (!lastHeartbeat) return '-'
+  const heartbeatTime = new Date(lastHeartbeat).getTime()
+  const now = Date.now()
+  const diff = Math.floor((now - heartbeatTime) / 1000)
+
+  if (diff < 60) return `${diff}秒前`
+  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
+  return `${Math.floor(diff / 86400)}天前`
+}
+
 onMounted(() => {
   fetchDevices()
+  // 每10秒自动刷新设备列表
+  refreshTimer = window.setInterval(() => {
+    fetchDevices()
+  }, 10000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
 })
 </script>
 
@@ -275,5 +328,29 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.heartbeat-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.heartbeat-status .time-text {
+  font-size: 12px;
+  color: #909399;
+}
+
+.heartbeat-status.online .time-text {
+  color: #67C23A;
+}
+
+.heartbeat-status.offline .time-text {
+  color: #E6A23C;
+}
+
+.heartbeat-status.never {
+  align-items: center;
 }
 </style>
