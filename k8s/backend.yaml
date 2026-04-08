@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: face-scan-backend
+  namespace: face-scan
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: face-scan-backend
+  template:
+    metadata:
+      labels:
+        app: face-scan-backend
+    spec:
+      containers:
+      - name: backend
+        image: face-scan-backend:2.1.0
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: face-scan-config
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: face-scan-secrets
+              key: database-url
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: face-scan-secrets
+              key: jwt-secret
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: face-scan-secrets
+              key: s3-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: face-scan-secrets
+              key: s3-secret-key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: face-scan-backend-service
+  namespace: face-scan
+spec:
+  selector:
+    app: face-scan-backend
+  ports:
+  - port: 8000
+    targetPort: 8000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: face-scan-backend-hpa
+  namespace: face-scan
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: face-scan-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

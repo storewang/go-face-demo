@@ -5,31 +5,23 @@ from fastapi import HTTPException, Header
 
 from jose import JWTError, jwt
 from passlib.hash import bcrypt
+import structlog
 
 from app.config import settings
+from app.cache import redis_client
+
+log = structlog.get_logger(__name__)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证明文密码与哈希值是否匹配"""
     return bcrypt.verify(plain_password, hashed_password)
 
 
 def hash_password(password: str) -> str:
-    """对密码进行bcrypt哈希"""
     return bcrypt.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """
-    创建JWT访问令牌
-    
-    Args:
-        data: 包含sub(用户标识)等信息的字典
-        expires_delta: 可选的过期时间增量
-        
-    Returns:
-        JWT token字符串
-    """
     to_encode = data.copy()
     
     if expires_delta:
@@ -53,16 +45,25 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
+def _is_token_blacklisted(token: str) -> bool:
+    return redis_client.exists(f"token_blacklist:{token}")
+
+
+def _revoke_token(token: str):
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        expire = payload.get("exp", 0)
+        ttl = max(expire - int(datetime.now(timezone.utc).timestamp()), 0)
+        if ttl > 0:
+            redis_client.set(f"token_blacklist:{token}", "1", ttl)
+            log.info("token_revoked", user_id=payload.get("sub"))
+    except Exception as e:
+        log.warning("token_revoke_failed", error=str(e))
+
+
 def verify_token(token: str) -> Optional[dict]:
-    """
-    验证JWT令牌
-    
-    Args:
-        token: JWT token字符串
-        
-    Returns:
-        payload字典，验证失败返回None
-    """
+    if _is_token_blacklisted(token):
+        return None
     try:
         payload = jwt.decode(
             token,
@@ -79,14 +80,6 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
-    """
-    FastAPI依赖项：获取当前认证用户
-    
-    从Authorization Header中提取并验证JWT token
-    
-    Raises:
-        HTTPException: 未提供令牌或令牌无效/过期
-    """
     if not authorization:
         raise HTTPException(status_code=401, detail="未提供认证令牌")
     

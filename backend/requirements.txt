@@ -47,3 +47,7 @@ prometheus-client==0.19.0
 # ===== 性能优化 =====
 # Redis 缓存（性能优化 Phase 3）
 redis[hiredis]==5.0.4
+
+# ===== 集群扩展（Phase 5） =====
+psycopg2-binary==2.9.9
+minio==7.2.7

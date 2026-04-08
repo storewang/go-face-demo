@@ -1,29 +1,41 @@
+import os
 from typing import List, Optional
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pathlib import Path
 
 
 class Settings(BaseSettings):
-    # App
     APP_NAME: str = "Face Scan API"
     DEBUG: bool = False
 
-    # Database
     DATABASE_URL: str = "sqlite:///./data/face_scan.db"
 
-    # Face Recognition
     FACE_THRESHOLD: float = 0.6
     LIVENESS_FRAMES: int = 5
 
-    # Storage
     DATA_DIR: Path = Path("./data")
     FACES_DIR: Path = DATA_DIR / "faces"
     IMAGES_DIR: Path = FACES_DIR / "images"
     ENCODINGS_DIR: Path = FACES_DIR / "encodings"
 
-    # Liveness Detection
     LIVENESS_MODEL_PATH: Path = Path("models/shape_predictor_68_face_landmarks.dat")
+
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 5432
+    DB_NAME: str = "facedb"
+    DB_USER: str = "face"
+    DB_PASSWORD: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def build_database_url(cls, values):
+        db_url = os.getenv("DATABASE_URL", "")
+        if db_url:
+            values["DATABASE_URL"] = db_url
+        elif values.get("DB_PASSWORD"):
+            values["DATABASE_URL"] = f"postgresql+psycopg2://{values['DB_USER']}:{values['DB_PASSWORD']}@{values['DB_HOST']}:{values['DB_PORT']}/{values['DB_NAME']}"
+        return values
 
     # ===== Redis 缓存配置（Phase 3 性能优化） =====
     REDIS_HOST: str = "localhost"
@@ -33,6 +45,15 @@ class Settings(BaseSettings):
     CACHE_USER_TTL: int = 600        # 用户信息缓存 10 分钟
     CACHE_RECOG_TTL: int = 3         # 同一用户识别结果缓存 3 秒
     CACHE_STATS_TTL: int = 300       # 统计数据缓存 5 分钟
+
+    # ===== MinIO 对象存储配置（Phase 5 集群扩展） =====
+    S3_ENDPOINT: str = "localhost:9000"
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
+    S3_USE_SSL: bool = False
+    S3_FACE_BUCKET: str = "faces"
+    S3_ENCODING_BUCKET: str = "encodings"
+    S3_SNAPSHOT_BUCKET: str = "snapshots"
 
     # ===== 安全配置 =====
     # 管理员密码哈希（优先使用哈希，兼容旧版明文密码）

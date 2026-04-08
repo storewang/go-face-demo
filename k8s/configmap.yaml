@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: face-scan-config
+  namespace: face-scan
+data:
+  DEBUG: "false"
+  FACE_THRESHOLD: "0.6"
+  CORS_ORIGINS: '["https://face.example.com"]'
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  S3_ENDPOINT: "minio-service:9000"
+  S3_USE_SSL: "false"
+  S3_FACE_BUCKET: "faces"
+  S3_ENCODING_BUCKET: "encodings"
+  S3_SNAPSHOT_BUCKET: "snapshots"
