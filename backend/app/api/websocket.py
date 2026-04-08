@@ -2,6 +2,7 @@ import base64
 import json
 import asyncio
 import numpy as np
+import structlog
 from datetime import datetime
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -13,6 +14,8 @@ from app.models import AttendanceLog, ActionType, ResultType
 from app.config import settings
 from app.utils.face_utils import FaceUtils
 import cv2
+
+log = structlog.get_logger(__name__)
 
 FRAME_BUFFER_SIZE = 5
 COOLDOWN_SECONDS = 3
@@ -187,7 +190,7 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
         session["last_result_time"] = datetime.now().timestamp()
 
     except Exception as e:
-        print(f"Error processing frame: {e}")
+        log.error("frame_process_error", error=str(e))
         await manager.send_json(
             websocket, {"type": "error", "data": {"message": str(e)}}
         )
@@ -217,5 +220,5 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        log.error("websocket_error", error=str(e))
         manager.disconnect(websocket)

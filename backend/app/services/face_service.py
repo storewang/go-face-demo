@@ -1,13 +1,33 @@
+"""
+人脸识别服务
+Phase 2 增强：Prometheus 指标埋点
+"""
 import os
 import cv2
 import numpy as np
+import time
+import structlog
 import face_recognition
 from typing import List, Tuple, Optional, Dict
 from sqlalchemy.orm import Session
+from prometheus_client import Counter, Histogram, Gauge
 
 from app.config import settings
 from app.models import User
 from app.utils.face_utils import FaceUtils
+
+log = structlog.get_logger(__name__)
+
+# Prometheus 指标定义
+FACE_RECOG_TOTAL = Counter("face_recognition_requests_total", "人脸识别请求总数")
+FACE_RECOG_SUCCESS = Counter("face_recognition_success_total", "人脸识别成功数")
+FACE_RECOG_FAILURE = Counter("face_recognition_failure_total", "人脸识别失败数", ["reason"])
+FACE_RECOG_DURATION = Histogram(
+    "face_recognition_duration_seconds",
+    "识别耗时分布",
+    buckets=[0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0],
+)
+KNOWN_FACES_GAUGE = Gauge("known_faces_count", "已注册人脸数量")
 
 
 class FaceService:
@@ -15,7 +35,12 @@ class FaceService:
         self.known_encodings: List[np.ndarray] = []
         self.known_users: List[Dict] = []
         self.threshold = settings.FACE_THRESHOLD
+        self._ready = False
         self._load_known_faces()
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
 
     def _load_known_faces(self):
         from app.database import SessionLocal
@@ -42,7 +67,12 @@ class FaceService:
                         }
                     )
 
-            print(f"✅ Loaded {len(self.known_encodings)} known faces")
+            log.info("known_faces_loaded", count=len(self.known_encodings))
+            KNOWN_FACES_GAUGE.set(len(self.known_encodings))
+            self._ready = True
+        except Exception as e:
+            log.error("failed_to_load_known_faces", error=str(e))
+            self._ready = False
         finally:
             db.close()
 
@@ -70,6 +100,7 @@ class FaceService:
                         "department": user.department,
                     }
                 )
+        KNOWN_FACES_GAUGE.set(len(self.known_encodings))
 
     def detect_faces(self, image: np.ndarray) -> List[Dict]:
         locations = face_recognition.face_locations(image, model="hog")
@@ -125,6 +156,7 @@ class FaceService:
         db.commit()
 
         self.reload_faces(db)
+        log.info("face_registered", user_id=user_id, employee_id=user.employee_id)
 
         return {"success": True, "quality": face["quality"], "message": "人脸注册成功"}
 
@@ -145,9 +177,14 @@ class FaceService:
             return None, float(confidence)
 
     def verify_user(self, image: np.ndarray) -> Dict:
+        start_time = time.time()
+        FACE_RECOG_TOTAL.inc()
+
         faces = self.detect_faces(image)
 
         if len(faces) == 0:
+            FACE_RECOG_FAILURE.labels(reason="no_face_detected").inc()
+            FACE_RECOG_DURATION.observe(time.time() - start_time)
             return {
                 "success": False,
                 "user": None,
@@ -156,6 +193,8 @@ class FaceService:
             }
 
         if len(faces) > 1:
+            FACE_RECOG_FAILURE.labels(reason="multiple_faces").inc()
+            FACE_RECOG_DURATION.observe(time.time() - start_time)
             return {
                 "success": False,
                 "user": None,
@@ -166,6 +205,8 @@ class FaceService:
         face = faces[0]
 
         if face["quality"] == "poor":
+            FACE_RECOG_FAILURE.labels(reason="poor_quality").inc()
+            FACE_RECOG_DURATION.observe(time.time() - start_time)
             return {
                 "success": False,
                 "user": None,
@@ -176,6 +217,8 @@ class FaceService:
         user, confidence = self.recognize_face(face["encoding"])
 
         if user is None:
+            FACE_RECOG_FAILURE.labels(reason="not_recognized").inc()
+            FACE_RECOG_DURATION.observe(time.time() - start_time)
             return {
                 "success": False,
                 "user": None,
@@ -183,6 +226,8 @@ class FaceService:
                 "reason": "face_not_recognized",
             }
 
+        FACE_RECOG_SUCCESS.inc()
+        FACE_RECOG_DURATION.observe(time.time() - start_time)
         return {"success": True, "user": user, "confidence": confidence, "reason": None}
 
 

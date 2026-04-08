@@ -2,6 +2,9 @@ from app.database import engine, Base
 from app.models import User, AttendanceLog, SystemConfig
 from app.config import settings
 from pathlib import Path
+import structlog
+
+log = structlog.get_logger(__name__)
 
 
 def init_database():
@@ -48,7 +51,7 @@ def init_database():
     db.commit()
     db.close()
 
-    print("✅ Database initialized successfully!")
+    log.info("database_initialized")
 
 
 if __name__ == "__main__":
