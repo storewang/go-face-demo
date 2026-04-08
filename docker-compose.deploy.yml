@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: face-backend
+    ports:
+      - "8081:8000"
+    volumes:
+      - face-data:/app/data
+    env_file:
+      - ./backend/.env
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://192.168.3.85:8081
+        VITE_WS_URL: ws://192.168.3.85:8081/ws/face-stream
+    container_name: face-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+
+volumes:
+  face-data:
+
+networks:
+  default:
+    name: go-face-demo_default

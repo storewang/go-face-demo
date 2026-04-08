@@ -22,6 +22,7 @@ class DeviceWithOnlineResponse(DeviceResponse):
     is_online: bool = False
 
 router = APIRouter(prefix="/api/devices", tags=["设备管理"])
+heartbeat_router = APIRouter(prefix="/api/devices", tags=["设备管理"])
 
 
 @router.post("", response_model=DeviceResponse, summary="添加设备")
@@ -124,7 +125,7 @@ async def delete_device(
     return {"message": "设备已删除"}
 
 
-@router.post("/heartbeat", summary="设备心跳")
+@heartbeat_router.post("/heartbeat", summary="设备心跳")
 async def device_heartbeat(
     data: HeartbeatRequest,
     db: Session = Depends(get_db)

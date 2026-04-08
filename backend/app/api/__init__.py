@@ -5,7 +5,7 @@ from app.api.users import router as users_router
 from app.api.face import router as face_router
 from app.api.attendance import router as attendance_router
 from app.api.auth import router as auth_router
-from app.api.devices import router as devices_router
+from app.api.devices import router as devices_router, heartbeat_router as devices_heartbeat_router
 from app.api.statistics import router as statistics_router
 from app.api.self_service import router as self_service_router
 from app.utils.auth import get_current_user
@@ -24,6 +24,7 @@ api_router = APIRouter()
 api_router.include_router(auth_router)
 api_router.include_router(face_router)
 api_router.include_router(devices_router, dependencies=[Depends(get_current_user)])
+api_router.include_router(devices_heartbeat_router)  # 心跳接口免认证
 api_router.include_router(users_router, dependencies=[Depends(verify_admin())])
 api_router.include_router(attendance_router, dependencies=[Depends(verify_admin())])
 api_router.include_router(statistics_router, dependencies=[Depends(get_current_user)])
