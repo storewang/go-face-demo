@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from typing import Optional, List
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,8 @@ from app.schemas.face import (
 from app.services.face_service import face_service
 from app.services.liveness_service import get_liveness_service
 from app.utils.face_utils import FaceUtils
+from app.utils.validators import validate_image, sanitize_filename
+from app.main import limiter
 
 router = APIRouter(prefix="/api/face", tags=["人脸识别"])
 
@@ -165,10 +167,10 @@ def verify_face(
     )
 
 
-@router.post(
-    "/register/{user_id}", response_model=FaceRegisterResponse, summary="注册人脸"
-)
-def register_face(
+@router.post("/register/{user_id}", response_model=FaceRegisterResponse, summary="注册人脸")
+@limiter.limit("10/minute")
+async def register_face(
+    request: Request,
     user_id: int,
     image: UploadFile = File(..., description="人脸照片"),
     db: Session = Depends(get_db),
@@ -178,6 +180,13 @@ def register_face(
         raise HTTPException(status_code=404, detail="用户不存在")
 
     image_bytes = image.file.read()
+    
+    safe_filename = sanitize_filename(image.filename)
+    
+    error_msg = validate_image(image_bytes, safe_filename)
+    if error_msg:
+        raise HTTPException(status_code=400, detail=error_msg)
+
     img = FaceUtils.load_image_from_bytes(image_bytes)
 
     result = face_service.register_face(user_id, img, db)

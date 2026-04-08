@@ -18,8 +18,8 @@ class FaceDetectResponse(BaseModel):
 class UserInfo(BaseModel):
     id: int
     employee_id: str
-    name: str
-    department: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    department: Optional[str] = Field(default=None, max_length=100)
 
 
 class FaceVerifyResponse(BaseModel):
