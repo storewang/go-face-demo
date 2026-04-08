@@ -22,7 +22,13 @@ COOLDOWN_SECONDS = 3
 
 
 async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
+    # Phase 3 性能优化：跳帧逻辑（如果上一帧还在处理，丢弃当前帧）
+    if session.get("processing", False):
+        return
+    
+    session["processing"] = True
     try:
+        # === 原有处理逻辑 ===
         image_bytes = base64.b64decode(frame_data)
         image = FaceUtils.load_image_from_bytes(image_bytes)
 
@@ -194,6 +200,9 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
         await manager.send_json(
             websocket, {"type": "error", "data": {"message": str(e)}}
         )
+    finally:
+        # 确保 processing 标志被重置
+        session["processing"] = False
 
 
 async def websocket_endpoint(websocket: WebSocket):

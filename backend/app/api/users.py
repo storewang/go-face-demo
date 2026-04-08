@@ -11,6 +11,8 @@ from app.schemas.user import (
     UserListResponse,
     UserRegisterResponse,
 )
+from app.cache import redis_client
+from app.config import settings
 
 router = APIRouter(prefix="/api/users", tags=["用户管理"])
 
@@ -44,9 +46,19 @@ def list_users(
 
 @router.get("/{user_id}", response_model=UserResponse, summary="获取用户详情")
 def get_user(user_id: int, db: Session = Depends(get_db)):
+    # Phase 3 性能优化：用户信息缓存（TTL 10分钟）
+    cache_key = f"user:{user_id}"
+    cached = redis_client.get_json(cache_key)
+    if cached:
+        return UserResponse.model_validate(cached)
+    
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    
+    user_data = UserResponse.model_validate(user).model_dump()
+    redis_client.set_json(cache_key, user_data, settings.CACHE_USER_TTL)
+    
     return UserResponse.model_validate(user)
 
 
@@ -109,6 +121,9 @@ def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get
     db.commit()
     db.refresh(user)
 
+    # 清除用户缓存
+    redis_client.delete(f"user:{user_id}")
+
     return UserResponse.model_validate(user)
 
 
@@ -131,5 +146,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
     db.delete(user)
     db.commit()
+
+    # 清除用户缓存
+    redis_client.delete(f"user:{user_id}")
 
     return {"code": 200, "message": "删除成功"}

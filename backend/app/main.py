@@ -1,6 +1,7 @@
 """
 main.py - FastAPI 应用入口
 Phase 2 运维增强版本
+Phase 3 性能优化版本
 """
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +46,12 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         secure_headers.starlette(response)
         return response
+
+    @app.on_event("startup")
+    async def startup_event():
+        # Phase 3 性能优化：启动时初始化数据库索引
+        from app.database import ensure_indexes
+        ensure_indexes()
 
     app.include_router(api_router)
     app.include_router(health_router)

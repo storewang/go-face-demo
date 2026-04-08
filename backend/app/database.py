@@ -3,10 +3,14 @@ SQLAlchemy 数据库配置
 支持连接池和自动会话管理
 """
 from contextlib import contextmanager
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import structlog
+
 from app.config import settings
+
+log = structlog.get_logger(__name__)
 
 engine = create_engine(
     settings.DATABASE_URL,
@@ -46,3 +50,29 @@ def get_db_context():
         raise
     finally:
         db.close()
+
+
+def ensure_indexes():
+    """Phase 3 性能优化：确保关键数据库索引存在"""
+    expected_indexes = {
+        "attendance_logs": [
+            ("idx_attendance_user_date", "user_id, created_at"),
+            ("idx_attendance_created", "created_at"),
+        ],
+    }
+    
+    inspector = inspect(engine)
+    
+    for table_name, indexes in expected_indexes.items():
+        if not inspector.has_table(table_name):
+            continue
+        existing = [idx["name"] for idx in inspector.get_indexes(table_name)]
+        for idx_name, columns in indexes:
+            if idx_name not in existing:
+                try:
+                    with engine.connect() as conn:
+                        conn.execute(text(f"CREATE INDEX {idx_name} ON {table_name} ({columns})"))
+                        conn.commit()
+                        log.info("index_created", table=table_name, index=idx_name)
+                except Exception as e:
+                    log.warning("index_create_failed", table=table_name, index=idx_name, error=str(e))

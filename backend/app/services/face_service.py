@@ -1,12 +1,15 @@
 """
 人脸识别服务
 Phase 2 增强：Prometheus 指标埋点
+Phase 3 增强：Redis 缓存 + 后台线程加载
 """
 import os
+import json
 import cv2
 import numpy as np
 import time
 import structlog
+import threading
 import face_recognition
 from typing import List, Tuple, Optional, Dict
 from sqlalchemy.orm import Session
@@ -15,6 +18,7 @@ from prometheus_client import Counter, Histogram, Gauge
 from app.config import settings
 from app.models import User
 from app.utils.face_utils import FaceUtils
+from app.cache import redis_client
 
 log = structlog.get_logger(__name__)
 
@@ -28,6 +32,7 @@ FACE_RECOG_DURATION = Histogram(
     buckets=[0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0],
 )
 KNOWN_FACES_GAUGE = Gauge("known_faces_count", "已注册人脸数量")
+CACHE_HIT = Counter("face_recognition_cache_hits_total", "识别缓存命中次数")
 
 
 class FaceService:
@@ -36,7 +41,18 @@ class FaceService:
         self.known_users: List[Dict] = []
         self.threshold = settings.FACE_THRESHOLD
         self._ready = False
-        self._load_known_faces()
+        self._load_thread = threading.Thread(target=self._async_load, daemon=True)
+        self._load_thread.start()
+
+    def _async_load(self):
+        """后台线程异步加载特征库，避免阻塞启动"""
+        try:
+            self._load_known_faces()
+            self._ready = True
+            log.info("face_service_ready", known_faces=len(self.known_encodings))
+        except Exception as e:
+            log.error("face_service_load_error", error=str(e))
+            self._ready = False
 
     @property
     def ready(self) -> bool:
@@ -172,7 +188,24 @@ class FaceService:
         confidence = 1 - min_distance
 
         if confidence >= self.threshold:
-            return self.known_users[min_idx], float(confidence)
+            identified_user = self.known_users[min_idx]
+            user_id = identified_user["id"]
+            
+            # Phase 3 缓存优化：同一用户 3 秒内不重复识别
+            cache_key = f"recog:{user_id}"
+            cached = redis_client.get(cache_key)
+            if cached:
+                CACHE_HIT.inc()
+                result = json.loads(cached)
+                return (result.get("user"), result.get("confidence", 0.0))
+            
+            # 缓存识别结果
+            redis_client.set(
+                cache_key,
+                json.dumps({"user": identified_user, "confidence": float(confidence)}),
+                settings.CACHE_RECOG_TTL
+            )
+            return (identified_user, float(confidence))
         else:
             return None, float(confidence)
 

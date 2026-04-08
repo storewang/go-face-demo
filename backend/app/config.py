@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     # Liveness Detection
     LIVENESS_MODEL_PATH: Path = Path("models/shape_predictor_68_face_landmarks.dat")
 
+    # ===== Redis 缓存配置（Phase 3 性能优化） =====
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    # 缓存 TTL（秒）
+    CACHE_USER_TTL: int = 600        # 用户信息缓存 10 分钟
+    CACHE_RECOG_TTL: int = 3         # 同一用户识别结果缓存 3 秒
+    CACHE_STATS_TTL: int = 300       # 统计数据缓存 5 分钟
+
     # ===== 安全配置 =====
     # 管理员密码哈希（优先使用哈希，兼容旧版明文密码）
     ADMIN_PASSWORD: Optional[str] = None  # 移除默认值，仅用于首次生成哈希

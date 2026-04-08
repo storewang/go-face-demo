@@ -43,3 +43,7 @@ alembic==1.13.1
 # Prometheus 监控
 prometheus-fastapi-instrumentator==7.0.0
 prometheus-client==0.19.0
+
+# ===== 性能优化 =====
+# Redis 缓存（性能优化 Phase 3）
+redis[hiredis]==5.0.4
