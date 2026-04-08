@@ -1,0 +1,183 @@
+<template>
+  <div class="dashboard">
+    <el-row class="mb-4">
+      <el-col>
+        <h2>统计仪表板</h2>
+      </el-col>
+    </el-row>
+
+    <div v-if="loading" class="loading">加载中……</div>
+
+    <template v-else-if="dailyStats">
+      <el-row :gutter="20" class="stats-grid">
+        <el-col :span="8">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-label">总用户数</div>
+            <el-statistic :value="dailyStats.total_users" />
+          </el-card>
+        </el-col>
+        <el-col :span="8">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-label">签到总数</div>
+            <el-statistic :value="dailyStats.check_in_count" />
+          </el-card>
+        </el-col>
+        <el-col :span="8">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-label">签出总数</div>
+            <el-statistic :value="dailyStats.check_out_count" />
+          </el-card>
+        </el-col>
+        <el-col :span="8">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-label">考勤总数</div>
+            <el-statistic :value="dailyStats.attendance_count" />
+          </el-card>
+        </el-col>
+        <el-col :span="8">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-label">成功次数</div>
+            <el-statistic :value="dailyStats.success_count" />
+          </el-card>
+        </el-col>
+        <el-col :span="8">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-label">失败次数</div>
+            <el-statistic :value="dailyStats.fail_count" />
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="20" style="margin-top: 20px">
+        <el-col :span="6" v-for="item in quickCards" :key="item.path">
+          <el-card shadow="hover" class="quick-card" @click="goto(item.path)">
+            <div class="quick-content">
+              <el-icon :size="40" :color="item.color"><component :is="item.icon" /></el-icon>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.description }}</p>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="20" style="margin-top: 20px">
+        <el-col :span="24">
+          <el-card shadow="hover" class="personal-status">
+            <div class="status-title">个人今日打卡状态</div>
+            <div v-if="isLoggedIn">
+              <el-tag :type="todayAttendance ? 'success' : 'warning'">
+                {{ todayAttendance ? '已打卡' : '未打卡' }}
+              </el-tag>
+              <span v-if="todayAttendance" style="margin-left: 12px">
+                签到: {{ dailyStats.check_in_count > 0 ? '已记录' : '--' }}
+              </span>
+            </div>
+            <div v-else>
+              <el-tag type="info">请先登录</el-tag>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { UserFilled, Camera, Document, User } from '@element-plus/icons-vue'
+import type { DailyStats } from '@/types/statistics'
+import { getDailyStats } from '@/api/statistics'
+
+const router = useRouter()
+
+const dailyStats = ref<DailyStats | null>(null)
+const loading = ref(false)
+
+const quickCards = [
+  { path: '/register', title: '用户注册', description: '录入新用户和人脸', icon: UserFilled, color: '#409EFF' },
+  { path: '/scan', title: '实时刷脸', description: '门禁识别和打卡', icon: Camera, color: '#67C23A' },
+  { path: '/records', title: '考勤记录', description: '查询和导出考勤', icon: Document, color: '#E6A23C' },
+  { path: '/users', title: '用户管理', description: '管理已注册用户', icon: User, color: '#F56C6C' }
+]
+
+const goto = (path: string) => router.push(path)
+
+const isLoggedIn = computed(() => !!localStorage.getItem('admin_token'))
+const todayAttendance = computed(() => dailyStats.value ? dailyStats.value.check_in_count > 0 : false)
+
+onMounted(async () => {
+  loading.value = true
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    dailyStats.value = await getDailyStats(today)
+  } catch (e) {
+    console.error('获取每日统计失败', e)
+  } finally {
+    loading.value = false
+  }
+})
+</script>
+
+<style scoped>
+.dashboard {
+  padding: 20px;
+  max-width: 1200px;
+}
+
+.loading {
+  text-align: center;
+  color: #909399;
+  padding: 40px;
+}
+
+.stats-grid {
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  text-align: center;
+  padding: 20px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.quick-card {
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.quick-card:hover {
+  transform: translateY(-5px);
+}
+
+.quick-content {
+  text-align: center;
+  padding: 10px;
+}
+
+.quick-content h3 {
+  margin: 12px 0 8px;
+  font-size: 16px;
+}
+
+.quick-content p {
+  color: #999;
+  font-size: 12px;
+  margin: 0;
+}
+
+.personal-status {
+  padding: 20px;
+}
+
+.status-title {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+</style>

@@ -19,6 +19,14 @@
         <el-table-column prop="name" label="姓名" width="150" />
         <el-table-column prop="department" label="部门" width="150" />
 
+        <el-table-column prop="role" label="角色" width="120">
+          <template #default="{ row }">
+            <el-tag :type="roleTagType(row.role)" size="small">
+              {{ roleText(row.role) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column label="人脸状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.face_encoding_path ? 'success' : 'danger'" size="small">
@@ -196,6 +204,24 @@ function formatDateTime(datetime?: string): string {
     minute: '2-digit',
     second: '2-digit'
   })
+}
+
+function roleText(role?: string): string {
+  switch (role) {
+    case 'super_admin': return '超级管理员'
+    case 'dept_admin': return '部门管理员'
+    case 'employee': return '员工'
+    default: return '未知'
+  }
+}
+
+function roleTagType(role?: string): string {
+  switch (role) {
+    case 'super_admin': return 'danger'
+    case 'dept_admin': return 'warning'
+    case 'employee': return 'success'
+    default: return 'info'
+  }
 }
 
 // --- 人脸采集 ---

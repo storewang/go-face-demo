@@ -105,6 +105,10 @@ export function del<T>(url: string): Promise<T> {
   return service.delete(url)
 }
 
+export function put<T>(url: string, data?: unknown): Promise<T> {
+  return service.put(url, data)
+}
+
 export function download(url: string, params?: Record<string, unknown>): Promise<Blob> {
   return service.get(url, {
     params,

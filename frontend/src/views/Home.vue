@@ -19,7 +19,7 @@
     </el-row>
 
     <el-row :gutter="20" style="margin-top: 30px">
-      <el-col :span="8">
+      <el-col :span="6">
         <el-card class="stat-card">
           <el-statistic title="注册用户" :value="stats.userCount">
             <template #prefix>
@@ -28,18 +28,27 @@
           </el-statistic>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="6">
         <el-card class="stat-card">
-          <el-statistic title="今日打卡" :value="stats.todayCount">
+          <el-statistic title="上班打卡" :value="stats.checkInCount">
             <template #prefix>
               <el-icon><Clock /></el-icon>
             </template>
           </el-statistic>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="6">
         <el-card class="stat-card">
-          <el-statistic title="识别成功率" :value="stats.successRate" suffix="%">
+          <el-statistic title="下班打卡" :value="stats.checkOutCount">
+            <template #prefix>
+              <el-icon><Clock /></el-icon>
+            </template>
+          </el-statistic>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card class="stat-card">
+          <el-statistic title="识别成功" :value="stats.successRate" suffix="%">
             <template #prefix>
               <el-icon><SuccessFilled /></el-icon>
             </template>
@@ -61,7 +70,7 @@ import {
   SuccessFilled
 } from '@element-plus/icons-vue'
 import * as userApi from '@/api/user'
-import * as attendanceApi from '@/api/attendance'
+import * as statisticsApi from '@/api/statistics'
 
 const menuItems = [
   {
@@ -96,29 +105,25 @@ const menuItems = [
 
 const stats = ref({
   userCount: 0,
-  todayCount: 0,
+  checkInCount: 0,
+  checkOutCount: 0,
   successRate: 0
 })
 
 onMounted(async () => {
   try {
-    const [users, attendanceStats] = await Promise.all([
+    const [users, dailyStats] = await Promise.all([
       userApi.getUsers({ page: 1, page_size: 1 }),
-      attendanceApi.getStats()
+      statisticsApi.getDailyStats()
     ])
 
-    stats.value.userCount = users.total
+    stats.value.userCount = dailyStats.total_users
+    stats.value.checkInCount = dailyStats.check_in_count
+    stats.value.checkOutCount = dailyStats.check_out_count
 
-    const today = new Date().toISOString().split('T')[0]
-    const todayStats = await attendanceApi.getStats({
-      start_date: today,
-      end_date: today
-    })
-    stats.value.todayCount = todayStats.total_records
-
-    if (attendanceStats.total_records > 0) {
+    if (dailyStats.attendance_count > 0) {
       stats.value.successRate = Number(
-        ((attendanceStats.success_count / attendanceStats.total_records) * 100).toFixed(1)
+        ((dailyStats.success_count / dailyStats.attendance_count) * 100).toFixed(1)
       )
     }
   } catch {

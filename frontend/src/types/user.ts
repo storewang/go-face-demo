@@ -1,9 +1,12 @@
+export type UserRole = 'super_admin' | 'dept_admin' | 'employee' | 'unknown'
+
 export interface User {
   id: number
   employee_id: string
   name: string
   department?: string
   status: number
+  role?: UserRole
   face_encoding_path?: string
   face_image_path?: string
   created_at?: string

@@ -1,3 +1,6 @@
 export * as userApi from './user'
 export * as faceApi from './face'
 export * as attendanceApi from './attendance'
+export * as deviceApi from './device'
+export * as statisticsApi from './statistics'
+export * as selfApi from './self'

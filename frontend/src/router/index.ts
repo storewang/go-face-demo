@@ -9,6 +9,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '首页' }
   },
   {
+    path: '/dashboard',
+    name: 'dashboard',
+    component: () => import('@/views/Dashboard.vue'),
+    meta: { title: '统计仪表盘', requiresAuth: true }
+  },
+  {
     path: '/register',
     name: 'register',
     component: () => import('@/views/Register.vue'),
@@ -37,6 +43,18 @@ const routes: RouteRecordRaw[] = [
     name: 'users',
     component: () => import('@/views/Users.vue'),
     meta: { title: '用户管理', requiresAuth: true }
+  },
+  {
+    path: '/devices',
+    name: 'devices',
+    component: () => import('@/views/Devices.vue'),
+    meta: { title: '设备管理', requiresAuth: true }
+  },
+  {
+    path: '/profile',
+    name: 'profile',
+    component: () => import('@/views/Profile.vue'),
+    meta: { title: '个人中心', requiresAuth: true }
   },
   {
     path: '/:pathMatch(.*)*',
