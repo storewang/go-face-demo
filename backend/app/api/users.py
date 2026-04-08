@@ -13,8 +13,23 @@ from app.schemas.user import (
 )
 from app.cache import redis_client
 from app.config import settings
+from app.utils.auth import get_current_user
+from app.utils.permissions import require_role, RoleType
 
 router = APIRouter(prefix="/api/users", tags=["用户管理"])
+
+
+def _filter_by_role(query, current_user: dict, db: Session):
+    """根据用户角色过滤查询"""
+    user_role = current_user.get("role", RoleType.EMPLOYEE)
+    user_dept = current_user.get("department", "")
+    
+    if user_role == RoleType.SUPER_ADMIN:
+        return query
+    elif user_role == RoleType.DEPT_ADMIN and user_dept:
+        return query.filter(User.department == user_dept)
+    else:
+        return query.filter(User.id == current_user.get("sub"))
 
 
 @router.get("", response_model=UserListResponse, summary="获取用户列表")
@@ -24,8 +39,9 @@ def list_users(
     department: Optional[str] = Query(None, description="部门筛选"),
     status: Optional[int] = Query(None, ge=0, le=1, description="状态筛选"),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role(RoleType.SUPER_ADMIN, RoleType.DEPT_ADMIN)),
 ):
-    query = db.query(User)
+    query = _filter_by_role(db.query(User), current_user, db)
 
     if department:
         query = query.filter(User.department == department)
@@ -109,11 +125,22 @@ def register_user(
 
 
 @router.put("/{user_id}", response_model=UserResponse, summary="更新用户信息")
-def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
+def update_user(
+    user_id: int,
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role(RoleType.SUPER_ADMIN, RoleType.DEPT_ADMIN))
+):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-
+    
+    user_role = current_user.get("role", RoleType.EMPLOYEE)
+    user_dept = current_user.get("department", "")
+    
+    if user_role == RoleType.DEPT_ADMIN and user.department != user_dept:
+        raise HTTPException(status_code=403, detail="只能管理本部门用户")
+    
     update_data = user_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(user, field, value)
@@ -121,7 +148,6 @@ def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get
     db.commit()
     db.refresh(user)
 
-    # 清除用户缓存
     redis_client.delete(f"user:{user_id}")
 
     return UserResponse.model_validate(user)
@@ -147,7 +173,33 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.delete(user)
     db.commit()
 
-    # 清除用户缓存
     redis_client.delete(f"user:{user_id}")
 
     return {"code": 200, "message": "删除成功"}
+
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
+
+@router.put("/{user_id}/role", response_model=UserResponse, summary="修改用户角色")
+def update_user_role(
+    user_id: int,
+    role_update: UserRoleUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role(RoleType.SUPER_ADMIN))
+):
+    if role_update.role not in ["super_admin", "dept_admin", "employee"]:
+        raise HTTPException(status_code=400, detail="无效的角色")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    user.role = role_update.role
+    db.commit()
+    db.refresh(user)
+    
+    redis_client.delete(f"user:{user_id}")
+    
+    return UserResponse.model_validate(user)

@@ -14,6 +14,7 @@ class User(Base):
     face_encoding_path = Column(String(255), nullable=True)
     face_image_path = Column(String(255), nullable=True)
     status = Column(Integer, default=1)  # 1=active, 0=inactive
+    role = Column(String(20), default="employee", nullable=False)  # super_admin/dept_admin/employee
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

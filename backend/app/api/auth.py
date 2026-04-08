@@ -55,7 +55,11 @@ async def login(request: Request, body: LoginRequest):
     if not verify_password(body.password, admin_hash):
         raise HTTPException(status_code=401, detail="密码错误")
     
-    access_token = create_access_token(data={"sub": "admin"})
+    access_token = create_access_token(data={
+        "sub": "admin",
+        "role": "super_admin",
+        "department": "admin"
+    })
     
     return {
         "code": 200,

@@ -9,6 +9,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket.manager import manager
 from app.services.face_service import face_service
 from app.services.liveness_service import get_liveness_service
+from app.services.notification_service import notification_service
 from app.database import SessionLocal
 from app.models import AttendanceLog, ActionType, ResultType
 from app.config import settings
@@ -115,6 +116,7 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
         user, confidence = face_service.recognize_face(face["encoding"])
 
         if user is None:
+            notification_service.face_recognized("未知", confidence, "failed")
             await manager.send_json(
                 websocket,
                 {
@@ -169,6 +171,8 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
             )
             db.add(record)
             db.commit()
+            
+            notification_service.attendance_recorded(user["name"], action_type.value)
         finally:
             db.close()
 

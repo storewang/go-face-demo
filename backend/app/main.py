@@ -27,7 +27,29 @@ secure_headers = SecureHeaders()
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
+    app = FastAPI(
+        title="人脸识别门禁考勤系统",
+        description="""
+        ## 功能特性
+        - 🔐 JWT 认证 + RBAC 角色权限控制
+        - 👤 人脸注册与识别
+        - 📋 考勤签到/签退记录
+        - 📍 多门禁设备管理
+        - 📊 考勤统计与趋势分析
+        - 🔔 实时通知推送
+        - 👤 用户自助服务
+        - 📈 Prometheus 监控指标
+        
+        ## 角色说明
+        | 角色 | 权限 |
+        |------|------|
+        | super_admin | 全部权限 |
+        | dept_admin | 部门管理 + 设备管理 |
+        | employee | 个人考勤查看 + 人脸注册 |
+        """,
+        version="2.1.0",
+        debug=settings.DEBUG,
+    )
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

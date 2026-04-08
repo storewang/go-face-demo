@@ -39,7 +39,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     
     to_encode.update({
         "exp": expire,
-        "type": "access"
+        "type": "access",
+        "role": data.get("role", "employee"),
+        "department": data.get("department", ""),
     })
     
     encoded_jwt = jwt.encode(

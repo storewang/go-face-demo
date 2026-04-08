@@ -20,12 +20,13 @@ class AttendanceLog(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    employee_id = Column(String(50), nullable=True, index=True)  # 冗余存储
-    name = Column(String(100), nullable=True)  # 冗余存储
-    action_type = Column(String(20), nullable=False)  # CHECK_IN/CHECK_OUT
-    confidence = Column(Float, nullable=True)  # 0-1
+    device_id = Column(Integer, nullable=True, index=True)
+    employee_id = Column(String(50), nullable=True, index=True)
+    name = Column(String(100), nullable=True)
+    action_type = Column(String(20), nullable=False)
+    confidence = Column(Float, nullable=True)
     snapshot_path = Column(String(255), nullable=True)
-    result = Column(String(20), nullable=False)  # SUCCESS/FAILED
+    result = Column(String(20), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     # Relationships

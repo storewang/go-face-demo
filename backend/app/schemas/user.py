@@ -17,11 +17,13 @@ class UserUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     department: Optional[str] = Field(None, max_length=100)
     status: Optional[int] = Field(None, ge=0, le=1)
+    role: Optional[str] = Field(None, max_length=20)
 
 
 class UserResponse(UserBase):
     id: int
     status: int
+    role: str = "employee"
     face_encoding_path: Optional[str] = None
     face_image_path: Optional[str] = None
     created_at: Optional[datetime] = None
