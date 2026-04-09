@@ -20,6 +20,11 @@ class HeartbeatRequest(BaseModel):
 # 带在线状态的设备响应
 class DeviceWithOnlineResponse(DeviceResponse):
     is_online: bool = False
+# 设备列表响应
+class DeviceListResponse(BaseModel):
+    items: List[DeviceWithOnlineResponse]
+    total: int
+
 
 router = APIRouter(prefix="/api/devices", tags=["设备管理"])
 heartbeat_router = APIRouter(prefix="/api/devices", tags=["设备管理"])
@@ -42,7 +47,7 @@ async def create_device(
     return device
 
 
-@router.get("", response_model=List[DeviceWithOnlineResponse], summary="设备列表")
+@router.get("", response_model=DeviceListResponse, summary="设备列表")
 async def list_devices(
     status: Optional[int] = Query(None, description="按状态筛选"),
     db: Session = Depends(get_db),
@@ -75,7 +80,7 @@ async def list_devices(
             device_dict["is_online"] = seconds_diff <= 60
         result.append(DeviceWithOnlineResponse(**device_dict))
     
-    return result
+    return {"items": result, "total": len(result)}
 
 
 @router.get("/{device_id}", response_model=DeviceResponse, summary="设备详情")
