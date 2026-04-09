@@ -55,7 +55,11 @@ service.interceptors.response.use(
         case 401:
           message = '登录已过期，请重新登录'
           localStorage.removeItem('admin_token')
-          window.location.href = '/login'
+          // 公开页面（/scan, /register）不跳转登录
+          const publicPaths = ['/scan', '/register']
+          if (!publicPaths.some(p => window.location.pathname.startsWith(p))) {
+            window.location.href = '/login'
+          }
           break
         case 403:
           message = '拒绝访问'

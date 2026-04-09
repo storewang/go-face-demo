@@ -188,6 +188,7 @@ import {
 import { useWebSocket } from '@/composables/useWebSocket'
 import * as deviceApi from '@/api/device'
 import type { Device } from '@/types/device'
+import { useAuthStore } from '@/stores/auth'
 
 const isMobile = computed(() => window.innerWidth <= 768)
 
@@ -253,6 +254,8 @@ const confidenceColor = computed(() => {
 
 // 加载设备列表
 async function loadDevices() {
+  const authStore = useAuthStore()
+  if (!authStore.isLoggedIn) return
   try {
     const res = await deviceApi.getDevices()
     devices.value = res.items || []
