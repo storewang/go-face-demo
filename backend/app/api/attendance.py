@@ -38,11 +38,17 @@ def list_attendance(
     )
 
     if start_date:
-        start = datetime.strptime(start_date, "%Y-%m-%d")
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="开始日期格式错误，请使用 YYYY-MM-DD")
         query = query.filter(AttendanceLog.created_at >= start)
 
     if end_date:
-        end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        try:
+            end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="结束日期格式错误，请使用 YYYY-MM-DD")
         query = query.filter(AttendanceLog.created_at < end)
 
     if employee_id:

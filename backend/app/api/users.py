@@ -73,7 +73,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     
-    user_data = UserResponse.model_validate(user).model_dump()
+    user_data = UserResponse.model_validate(user).model_dump(mode='json')
     redis_client.set_json(cache_key, user_data, settings.CACHE_USER_TTL)
     
     return UserResponse.model_validate(user)
