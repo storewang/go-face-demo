@@ -10,37 +10,37 @@
 
     <template v-else-if="dailyStats">
       <el-row :gutter="20" class="stats-grid">
-        <el-col :span="8">
+        <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
             <div class="stat-label">总用户数</div>
             <el-statistic :value="dailyStats.total_users" />
           </el-card>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
             <div class="stat-label">签到总数</div>
             <el-statistic :value="dailyStats.check_in_count" />
           </el-card>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
             <div class="stat-label">签出总数</div>
             <el-statistic :value="dailyStats.check_out_count" />
           </el-card>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
             <div class="stat-label">考勤总数</div>
             <el-statistic :value="dailyStats.attendance_count" />
           </el-card>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
             <div class="stat-label">成功次数</div>
             <el-statistic :value="dailyStats.success_count" />
           </el-card>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
             <div class="stat-label">失败次数</div>
             <el-statistic :value="dailyStats.fail_count" />
@@ -48,11 +48,11 @@
         </el-col>
       </el-row>
 
-      <el-row :gutter="20" style="margin-top: 20px">
-        <el-col :span="6" v-for="item in quickCards" :key="item.path">
+      <el-row :gutter="20" class="quick-cards-section">
+        <el-col :xs="12" :sm="6" v-for="item in quickCards" :key="item.path">
           <el-card shadow="hover" class="quick-card" @click="goto(item.path)">
             <div class="quick-content">
-              <el-icon :size="40" :color="item.color"><component :is="item.icon" /></el-icon>
+              <el-icon :size="isMobile ? 32 : 40" :color="item.color"><component :is="item.icon" /></el-icon>
               <h3>{{ item.title }}</h3>
               <p>{{ item.description }}</p>
             </div>
@@ -60,7 +60,7 @@
         </el-col>
       </el-row>
 
-      <el-row :gutter="20" style="margin-top: 20px">
+      <el-row :gutter="20" class="personal-status-section">
         <el-col :span="24">
           <el-card shadow="hover" class="personal-status">
             <div class="status-title">个人今日打卡状态</div>
@@ -90,6 +90,7 @@ import type { DailyStats } from '@/types/statistics'
 import { getDailyStats } from '@/api/statistics'
 
 const router = useRouter()
+const isMobile = computed(() => window.innerWidth <= 768)
 
 const dailyStats = ref<DailyStats | null>(null)
 const loading = ref(false)
@@ -146,6 +147,11 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 
+.quick-cards-section,
+.personal-status-section {
+  margin-top: 20px;
+}
+
 .quick-card {
   cursor: pointer;
   transition: all 0.3s;
@@ -179,5 +185,40 @@ onMounted(async () => {
   font-size: 16px;
   font-weight: 500;
   margin-bottom: 12px;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .dashboard {
+    padding: 12px 8px;
+  }
+
+  .stat-card {
+    padding: 16px 12px;
+  }
+
+  .stat-card :deep(.el-statistic__content) {
+    font-size: 20px !important;
+  }
+
+  .stat-card :deep(.el-statistic__number) {
+    font-size: 20px !important;
+  }
+
+  .quick-content h3 {
+    font-size: 15px;
+  }
+
+  .quick-content p {
+    font-size: 11px;
+  }
+
+  .personal-status {
+    padding: 16px;
+  }
+
+  .status-title {
+    font-size: 15px;
+  }
 }
 </style>

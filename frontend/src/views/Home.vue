@@ -1,14 +1,14 @@
 <template>
   <div class="home">
     <el-row :gutter="20">
-      <el-col :span="6" v-for="item in menuItems" :key="item.path">
+      <el-col :xs="12" :sm="6" v-for="item in menuItems" :key="item.path">
         <el-card
           class="menu-card"
           shadow="hover"
           @click="$router.push(item.path)"
         >
           <div class="card-content">
-            <el-icon :size="60" :color="item.color">
+            <el-icon :size="48" :color="item.color">
               <component :is="item.icon" />
             </el-icon>
             <h3>{{ item.title }}</h3>
@@ -18,8 +18,8 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="20" style="margin-top: 30px">
-      <el-col :span="6">
+    <el-row :gutter="20" class="stats-section">
+      <el-col :xs="12" :sm="6">
         <el-card class="stat-card">
           <el-statistic title="注册用户" :value="stats.userCount">
             <template #prefix>
@@ -28,7 +28,7 @@
           </el-statistic>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="12" :sm="6">
         <el-card class="stat-card">
           <el-statistic title="上班打卡" :value="stats.checkInCount">
             <template #prefix>
@@ -37,7 +37,7 @@
           </el-statistic>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="12" :sm="6">
         <el-card class="stat-card">
           <el-statistic title="下班打卡" :value="stats.checkOutCount">
             <template #prefix>
@@ -46,7 +46,7 @@
           </el-statistic>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="12" :sm="6">
         <el-card class="stat-card">
           <el-statistic title="识别成功" :value="stats.successRate" suffix="%">
             <template #prefix>
@@ -164,5 +164,28 @@ onMounted(async () => {
 
 .stat-card {
   text-align: center;
+}
+
+.stats-section {
+  margin-top: 20px;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .card-content h3 {
+    font-size: 16px;
+  }
+
+  .card-content p {
+    font-size: 12px;
+  }
+
+  .stat-card :deep(.el-statistic__content) {
+    font-size: 24px !important;
+  }
+
+  .card-content .el-icon {
+    --el-icon-size: 40px;
+  }
 }
 </style>

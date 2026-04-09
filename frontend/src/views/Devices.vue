@@ -11,9 +11,9 @@
         </div>
       </template>
 
-      <el-form inline v-model="statusFilter" @submit.prevent="fetchDevices">
+      <el-form :inline="!isMobile" v-model="statusFilter" @submit.prevent="fetchDevices">
         <el-form-item label="状态">
-          <el-select v-model="statusFilter" clearable placeholder="全部" @change="fetchDevices">
+          <el-select v-model="statusFilter" clearable placeholder="全部" @change="fetchDevices" style="width: 100%">
             <el-option label="全部" :value="undefined" />
             <el-option label="在线" :value="1" />
             <el-option label="离线" :value="0" />
@@ -22,7 +22,8 @@
         </el-form-item>
       </el-form>
 
-      <el-table :data="devices" v-loading="loading" stripe border>
+      <!-- 桌面端表格 -->
+      <el-table v-if="!isMobile" :data="devices" v-loading="loading" stripe border>
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="device_code" label="设备编号" width="150" />
         <el-table-column prop="name" label="设备名称" width="150" />
@@ -67,13 +68,63 @@
         </el-table-column>
       </el-table>
 
+      <!-- 移动端卡片列表 -->
+      <div v-else class="mobile-card-list" v-loading="loading">
+        <el-card v-for="row in devices" :key="row.id" class="mobile-device-card" shadow="hover">
+          <div class="mobile-card-header">
+            <div class="device-name-row">
+              <span class="device-name">{{ row.name }}</span>
+              <el-tag :type="statusTagType(row.status)" size="small">
+                {{ statusText(row.status) }}
+              </el-tag>
+            </div>
+          </div>
+
+          <div class="mobile-card-body">
+            <div class="info-row">
+              <span class="label">编号:</span>
+              <span class="value">{{ row.device_code }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">位置:</span>
+              <span class="value">{{ row.location || '-' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">心跳:</span>
+              <div v-if="isOnline(row.last_heartbeat)" class="heartbeat-status inline online">
+                <el-tag type="success" size="small">在线</el-tag>
+                <span class="time-text">{{ formatRelativeTime(row.last_heartbeat) }}</span>
+              </div>
+              <div v-else-if="isRecentlyOffline(row.last_heartbeat)" class="heartbeat-status inline offline">
+                <el-tag type="warning" size="small">离线</el-tag>
+                <span class="time-text">{{ formatDateTime(row.last_heartbeat) }}</span>
+              </div>
+              <div v-else class="heartbeat-status inline never">
+                <el-tag type="info" size="small">从未连接</el-tag>
+              </div>
+            </div>
+          </div>
+
+          <div class="mobile-card-actions">
+            <el-button type="primary" size="small" @click="openEditDialog(row)">
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+            <el-button type="danger" size="small" @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
+              删除
+            </el-button>
+          </div>
+        </el-card>
+      </div>
+
       <div class="pagination">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[10, 20, 50]"
           :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'prev, pager, next' : 'total, sizes, prev, pager, next, jumper'"
           @size-change="fetchDevices"
           @current-change="fetchDevices"
         />
@@ -83,7 +134,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="editMode ? '编辑设备' : '添加设备'"
-      width="500px"
+      :width="isMobile ? '90%' : '500px'"
       @close="resetForm"
     >
       <el-form :model="form" label-width="80px" ref="formRef">
@@ -116,11 +167,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import * as deviceApi from '@/api/device'
 import type { Device, DeviceCreate, DeviceUpdate } from '@/types/device'
+
+const isMobile = computed(() => window.innerWidth <= 768)
 
 let refreshTimer: number | null = null
 
@@ -352,5 +405,84 @@ onBeforeUnmount(() => {
 
 .heartbeat-status.never {
   align-items: center;
+}
+
+/* Mobile card list styles */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-device-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.device-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.device-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.mobile-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.info-row {
+  display: flex;
+  font-size: 14px;
+}
+
+.info-row .label {
+  color: #909399;
+  width: 50px;
+  flex-shrink: 0;
+}
+
+.info-row .value {
+  color: #303133;
+  flex: 1;
+}
+
+.heartbeat-status.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobile-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .devices-page {
+    padding: 12px 8px;
+  }
+
+  .mobile-card-actions .el-button {
+    flex: 1;
+    min-width: calc(50% - 4px);
+  }
 }
 </style>

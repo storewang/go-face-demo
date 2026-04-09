@@ -7,7 +7,9 @@
         </div>
       </template>
 
+      <!-- 桌面端表格 -->
       <el-table
+        v-if="!isMobile"
         :data="users"
         v-loading="loading"
         stripe
@@ -67,13 +69,66 @@
         </el-table-column>
       </el-table>
 
+      <!-- 移动端卡片列表 -->
+      <div v-else class="mobile-card-list" v-loading="loading">
+        <el-card v-for="row in users" :key="row.id" class="mobile-user-card" shadow="hover">
+          <div class="mobile-card-header">
+            <div class="user-name-row">
+              <span class="user-name">{{ row.name }}</span>
+              <el-tag :type="roleTagType(row.role)" size="small">
+                {{ roleText(row.role) }}
+              </el-tag>
+            </div>
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
+              {{ row.status === 1 ? '启用' : '禁用' }}
+            </el-tag>
+          </div>
+
+          <div class="mobile-card-body">
+            <div class="info-row">
+              <span class="label">工号:</span>
+              <span class="value">{{ row.employee_id }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">部门:</span>
+              <span class="value">{{ row.department || '-' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">人脸:</span>
+              <el-tag :type="row.face_encoding_path ? 'success' : 'danger'" size="small">
+                {{ row.face_encoding_path ? '已录入' : '未录入' }}
+              </el-tag>
+            </div>
+            <div class="info-row">
+              <span class="label">注册时间:</span>
+              <span class="value">{{ formatDateTime(row.created_at) }}</span>
+            </div>
+          </div>
+
+          <div class="mobile-card-actions">
+            <el-button
+              v-if="!row.face_encoding_path"
+              type="primary"
+              size="small"
+              @click="openFaceDialog(row)"
+            >
+              <el-icon><Camera /></el-icon>
+              人脸采集
+            </el-button>
+            <el-button type="danger" size="small" @click="handleDelete(row)">
+              删除
+            </el-button>
+          </div>
+        </el-card>
+      </div>
+
       <div class="pagination">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[10, 20, 50]"
           :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'prev, pager, next' : 'total, sizes, prev, pager, next, jumper'"
           @size-change="fetchUsers"
           @current-change="fetchUsers"
         />
@@ -84,7 +139,7 @@
     <el-dialog
       v-model="faceDialogVisible"
       :title="`人脸采集 - ${currentUser?.name} (${currentUser?.employee_id})`"
-      width="680px"
+      :width="isMobile ? '90%' : '680px'"
       :close-on-click-modal="false"
       @close="closeFaceDialog"
     >
@@ -143,6 +198,8 @@ import Camera from '@/components/Camera.vue'
 import * as userApi from '@/api/user'
 import * as faceApi from '@/api/face'
 import type { User } from '@/types/user'
+
+const isMobile = computed(() => window.innerWidth <= 768)
 
 // --- 用户列表 ---
 
@@ -401,5 +458,79 @@ async function confirmRegister() {
 
 .quality-row {
   text-align: center;
+}
+
+/* Mobile card list styles */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-user-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.mobile-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.info-row {
+  display: flex;
+  font-size: 14px;
+}
+
+.info-row .label {
+  color: #909399;
+  width: 70px;
+  flex-shrink: 0;
+}
+
+.info-row .value {
+  color: #303133;
+  flex: 1;
+}
+
+.mobile-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .users-page {
+    padding: 12px 8px;
+  }
+
+  .mobile-card-actions .el-button {
+    flex: 1;
+    min-width: calc(50% - 4px);
+  }
 }
 </style>

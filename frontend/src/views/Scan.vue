@@ -2,7 +2,7 @@
   <div class="scan-page">
     <div class="header">
       <h2>人脸识别门禁</h2>
-      <el-tag :type="connectionStatus">{{ connectionText }}</el-tag>
+      <el-tag :type="connectionStatus" size="small">{{ connectionText }}</el-tag>
     </div>
 
     <div class="main-content">
@@ -22,7 +22,7 @@
           ></canvas>
 
           <div v-if="statusMessage" class="status-overlay">
-            <el-icon class="pulse" :size="32">
+            <el-icon class="pulse" :size="28">
               <component :is="statusIcon" />
             </el-icon>
             <span>{{ statusMessage }}</span>
@@ -37,7 +37,7 @@
               placeholder="选择设备（可选）"
               clearable
               :disabled="isStreaming"
-              style="width: 200px"
+              :style="{ width: isMobile ? '150px' : '200px' }"
             >
               <el-option
                 v-for="device in devices"
@@ -50,31 +50,33 @@
                 <el-tag v-else type="info" size="small" style="margin-left: 8px">离线</el-tag>
               </el-option>
             </el-select>
-            <el-tag v-if="currentDeviceName" type="success" style="margin-left: 10px">
-              当前设备: {{ currentDeviceName }}
+            <el-tag v-if="currentDeviceName" type="success" size="small" style="margin-left: 8px">
+              {{ isMobile ? '' : '当前设备: ' }}{{ currentDeviceName }}
             </el-tag>
           </div>
 
-          <el-button
-            v-if="!isStreaming"
-            type="primary"
-            size="large"
-            @click="startScanning"
-            :loading="isStarting"
-          >
-            <el-icon><VideoCamera /></el-icon>
-            开始识别
-          </el-button>
+          <div class="control-buttons">
+            <el-button
+              v-if="!isStreaming"
+              type="primary"
+              size="large"
+              @click="startScanning"
+              :loading="isStarting"
+            >
+              <el-icon><VideoCamera /></el-icon>
+              {{ isMobile ? '识别' : '开始识别' }}
+            </el-button>
 
-          <el-button
-            v-else
-            type="danger"
-            size="large"
-            @click="stopScanning"
-          >
-            <el-icon><VideoPause /></el-icon>
-            停止识别
-          </el-button>
+            <el-button
+              v-else
+              type="danger"
+              size="large"
+              @click="stopScanning"
+            >
+              <el-icon><VideoPause /></el-icon>
+              {{ isMobile ? '停止' : '停止识别' }}
+            </el-button>
+          </div>
         </div>
       </div>
 
@@ -82,12 +84,12 @@
         <el-empty
           v-if="!lastResult"
           description="等待识别..."
-          :image-size="200"
+          :image-size="isMobile ? 150 : 200"
         />
 
         <el-card v-else class="result-card" :class="resultClass">
           <div class="result-header">
-            <el-icon :size="48" :color="resultIconColor">
+            <el-icon :size="isMobile ? 36 : 48" :color="resultIconColor">
               <component :is="resultIcon" />
             </el-icon>
             <h3>{{ resultTitle }}</h3>
@@ -95,8 +97,8 @@
 
           <div v-if="lastResult.success" class="result-body">
             <div class="user-info">
-              <el-avatar :size="80">
-                <el-icon :size="40"><UserFilled /></el-icon>
+              <el-avatar :size="isMobile ? 60 : 80">
+                <el-icon :size="isMobile ? 30 : 40"><UserFilled /></el-icon>
               </el-avatar>
 
               <div class="user-details">
@@ -133,7 +135,7 @@
             <div class="door-animation">
               <transition name="door">
                 <div v-if="showDoorOpen" class="door-open">
-                  <el-icon :size="60" color="#67C23A"><CircleCheckFilled /></el-icon>
+                  <el-icon :size="48" color="#67C23A"><CircleCheckFilled /></el-icon>
                   <div class="door-text">门已开启</div>
                 </div>
               </transition>
@@ -186,6 +188,8 @@ import {
 import { useWebSocket } from '@/composables/useWebSocket'
 import * as deviceApi from '@/api/device'
 import type { Device } from '@/types/device'
+
+const isMobile = computed(() => window.innerWidth <= 768)
 
 const videoRef = ref<HTMLVideoElement | null>(null)
 const overlayRef = ref<HTMLCanvasElement | null>(null)
@@ -263,7 +267,7 @@ async function startScanning() {
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' },
+      video: { width: isMobile.value ? 320 : 640, height: isMobile.value ? 240 : 480, facingMode: 'user' },
       audio: false
     })
 
@@ -274,13 +278,13 @@ async function startScanning() {
 
     // 连接 WebSocket，如果选择了设备则传递 deviceCode
     await connect(selectedDeviceCode.value || undefined)
-    
+
     // 设置设备注册回调
     onRegistered((device) => {
       currentDeviceName.value = device.device_name
       ElMessage.success(`已连接到设备: ${device.device_name}`)
     })
-    
+
     onMessage(handleWebSocketMessage)
 
     isStreaming.value = true
@@ -336,13 +340,13 @@ function captureFrame(): string | null {
   if (!videoRef.value) return null
 
   const canvas = document.createElement('canvas')
-  canvas.width = 640
-  canvas.height = 480
+  canvas.width = isMobile.value ? 320 : 640
+  canvas.height = isMobile.value ? 240 : 480
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
-  ctx.drawImage(videoRef.value, 0, 0, 640, 480)
+  ctx.drawImage(videoRef.value, 0, 0, canvas.width, canvas.height)
   return canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
 }
 
@@ -425,6 +429,7 @@ onMounted(() => {
 
 .header h2 {
   margin: 0;
+  font-size: 20px;
 }
 
 .main-content {
@@ -505,6 +510,11 @@ onMounted(() => {
   align-items: center;
 }
 
+.control-buttons {
+  display: flex;
+  gap: 12px;
+}
+
 .result-section {
   display: flex;
   flex-direction: column;
@@ -551,7 +561,7 @@ onMounted(() => {
 }
 
 .user-name {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: bold;
   margin-bottom: 8px;
 }
@@ -577,6 +587,7 @@ onMounted(() => {
 .detail-item .label {
   width: 80px;
   color: #666;
+  flex-shrink: 0;
 }
 
 .door-animation {
@@ -592,7 +603,7 @@ onMounted(() => {
 }
 
 .door-text {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: bold;
   color: #67C23A;
 }
@@ -623,9 +634,57 @@ onMounted(() => {
   margin-bottom: 15px;
 }
 
+/* Mobile responsive */
 @media (max-width: 1024px) {
   .main-content {
     grid-template-columns: 1fr;
+  }
+
+  .result-section {
+    order: 2;
+  }
+}
+
+@media (max-width: 768px) {
+  .scan-page {
+    padding: 12px 8px;
+  }
+
+  .header h2 {
+    font-size: 18px;
+  }
+
+  .video-container {
+    padding-top: 75%;
+  }
+
+  .user-info {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+  }
+
+  .user-name {
+    font-size: 18px;
+  }
+
+  .detail-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .detail-item .label {
+    width: auto;
+  }
+
+  .door-text {
+    font-size: 16px;
+  }
+
+  .status-overlay {
+    padding: 15px 20px;
+    font-size: 14px;
   }
 }
 </style>

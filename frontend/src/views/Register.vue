@@ -12,7 +12,7 @@
         ref="formRef"
         :model="form"
         :rules="rules"
-        label-width="80px"
+        :label-width="isMobile ? '70px' : '80px'"
       >
         <el-form-item label="工号" prop="employee_id">
           <el-input
@@ -112,6 +112,8 @@ import Camera from '@/components/Camera.vue'
 import * as userApi from '@/api/user'
 import * as faceApi from '@/api/face'
 import type { FormInstance, FormRules } from 'element-plus'
+
+const isMobile = computed(() => window.innerWidth <= 768)
 
 const router = useRouter()
 
@@ -315,5 +317,24 @@ function resetForm() {
 .quality-tip {
   text-align: center;
   margin-top: 10px;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .register-page {
+    padding: 12px 8px;
+  }
+
+  .register-card {
+    max-width: 100%;
+  }
+
+  .card-header {
+    font-size: 16px;
+  }
+
+  .preview-box img {
+    max-height: 300px;
+  }
 }
 </style>

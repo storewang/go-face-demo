@@ -1,7 +1,7 @@
 <template>
   <div class="profile-page">
     <el-row :gutter="20">
-      <el-col :span="12">
+      <el-col :xs="24" :sm="12">
         <el-card>
           <template #header>
             <div class="card-header">
@@ -26,7 +26,7 @@
         </el-card>
       </el-col>
 
-      <el-col :span="12">
+      <el-col :xs="24" :sm="12">
         <el-card>
           <template #header>
             <div class="card-header">
@@ -34,7 +34,7 @@
             </div>
           </template>
           <div v-loading="loading">
-            <el-row :gutter="20">
+            <el-row :gutter="12">
               <el-col :span="12">
                 <div class="status-item">
                   <div class="status-label">上班打卡</div>
@@ -77,7 +77,8 @@
           <span>最近考勤记录</span>
         </div>
       </template>
-      <el-table :data="recentRecords" v-loading="loading" stripe border>
+      <!-- 桌面端表格 -->
+      <el-table v-if="!isMobile" :data="recentRecords" v-loading="loading" stripe border>
         <el-table-column prop="action_type" label="类型" width="100">
           <template #default="{ row }">
             <el-tag>{{ row.action_type === 'check_in' ? '上班' : '下班' }}</el-tag>
@@ -96,6 +97,21 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 移动端卡片列表 -->
+      <div v-else class="mobile-record-list" v-loading="loading">
+        <el-card v-for="row in recentRecords" :key="row.id" class="mobile-record-card" shadow="hover">
+          <div class="record-header">
+            <el-tag :type="row.action_type === 'check_in' ? 'success' : 'warning'" size="small">
+              {{ row.action_type === 'check_in' ? '上班' : '下班' }}
+            </el-tag>
+            <el-tag :type="row.result === 'success' ? 'success' : 'danger'" size="small">
+              {{ row.result === 'success' ? '成功' : '失败' }}
+            </el-tag>
+          </div>
+          <div class="record-time">{{ formatDateTime(row.created_at) }}</div>
+        </el-card>
+      </div>
     </el-card>
 
     <el-card style="margin-top: 20px">
@@ -107,11 +123,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getProfile, getMyAttendance, unregisterFace, type Profile } from '@/api/self'
 import type { DailyStats } from '@/types/statistics'
 import type { AttendanceListResponse } from '@/types/attendance'
+
+const isMobile = computed(() => window.innerWidth <= 768)
 
 const loading = ref(false)
 const unregistering = ref(false)
@@ -238,5 +256,40 @@ onMounted(() => {
 .status-value {
   font-size: 16px;
   font-weight: 500;
+}
+
+/* Mobile record list styles */
+.mobile-record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-record-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+}
+
+.record-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.record-time {
+  font-size: 14px;
+  color: #909399;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .profile-page {
+    padding: 12px 8px;
+  }
+
+  .card-header {
+    font-size: 15px;
+  }
 }
 </style>

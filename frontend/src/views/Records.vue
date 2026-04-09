@@ -4,14 +4,14 @@
       <template #header>
         <div class="card-header">
           <span>考勤记录</span>
-          <el-button type="primary" @click="exportToExcel" :loading="exporting">
+          <el-button type="primary" @click="exportToExcel" :loading="exporting" :size="isMobile ? 'small' : 'default'">
             <el-icon><Download /></el-icon>
-            导出 Excel
+            <span v-if="!isMobile">导出 Excel</span>
           </el-button>
         </div>
       </template>
 
-      <el-form :inline="true" :model="queryParams" class="filter-form">
+      <el-form :inline="!isMobile" :model="queryParams" class="filter-form">
         <el-form-item label="日期范围">
           <el-date-picker
             v-model="dateRange"
@@ -22,6 +22,7 @@
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
             @change="handleDateChange"
+            style="width: 100%"
           />
         </el-form-item>
 
@@ -39,6 +40,7 @@
             v-model="queryParams.action_type"
             placeholder="全部"
             clearable
+            style="width: 100%"
           >
             <el-option label="上班" value="CHECK_IN" />
             <el-option label="下班" value="CHECK_OUT" />
@@ -50,6 +52,7 @@
             v-model="queryParams.result"
             placeholder="全部"
             clearable
+            style="width: 100%"
           >
             <el-option label="成功" value="SUCCESS" />
             <el-option label="失败" value="FAILED" />
@@ -61,6 +64,7 @@
             v-model="queryParams.device_id"
             placeholder="全部"
             clearable
+            style="width: 100%"
           >
             <el-option
               v-for="device in devices"
@@ -84,7 +88,9 @@
         </el-form-item>
       </el-form>
 
+      <!-- 桌面端表格 -->
       <el-table
+        v-if="!isMobile"
         :data="records"
         v-loading="loading"
         stripe
@@ -143,13 +149,60 @@
         </el-table-column>
       </el-table>
 
+      <!-- 移动端卡片列表 -->
+      <div v-else class="mobile-card-list" v-loading="loading">
+        <el-card v-for="row in records" :key="row.id" class="mobile-record-card" shadow="hover">
+          <div class="mobile-card-header">
+            <div class="record-info-row">
+              <span class="user-name">{{ row.name }}</span>
+              <el-tag :type="row.action_type === 'CHECK_IN' ? 'success' : 'warning'" size="small">
+                {{ row.action_type === 'CHECK_IN' ? '上班' : '下班' }}
+              </el-tag>
+            </div>
+            <el-tag :type="row.result === 'SUCCESS' ? 'success' : 'danger'" size="small">
+              {{ row.result === 'SUCCESS' ? '成功' : '失败' }}
+            </el-tag>
+          </div>
+
+          <div class="mobile-card-body">
+            <div class="info-row">
+              <span class="label">工号:</span>
+              <span class="value">{{ row.employee_id }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">时间:</span>
+              <span class="value">{{ formatDateTime(row.created_at) }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">设备:</span>
+              <span class="value">{{ row.device_name || '-' }}</span>
+            </div>
+            <div v-if="row.confidence" class="info-row">
+              <span class="label">置信度:</span>
+              <div class="confidence-bar">
+                <el-progress
+                  :percentage="Math.round(row.confidence * 100)"
+                  :color="getConfidenceColor(row.confidence)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="mobile-card-actions">
+            <el-button type="primary" size="small" link @click="viewDetail(row)">
+              详情
+            </el-button>
+          </div>
+        </el-card>
+      </div>
+
       <div class="pagination">
         <el-pagination
           v-model:current-page="queryParams.page"
           v-model:page-size="queryParams.page_size"
           :page-sizes="[10, 20, 50, 100]"
           :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
+          :layout="isMobile ? 'prev, pager, next' : 'total, sizes, prev, pager, next, jumper'"
           @size-change="fetchRecords"
           @current-change="fetchRecords"
         />
@@ -159,7 +212,7 @@
     <el-dialog
       v-model="detailVisible"
       title="考勤详情"
-      width="500px"
+      :width="isMobile ? '90%' : '500px'"
     >
       <el-descriptions :column="1" border>
         <el-descriptions-item label="记录ID">
@@ -194,13 +247,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Search, Refresh } from '@element-plus/icons-vue'
 import * as attendanceApi from '@/api/attendance'
 import * as deviceApi from '@/api/device'
 import type { AttendanceRecord } from '@/types/attendance'
 import type { Device } from '@/types/device'
+
+const isMobile = computed(() => window.innerWidth <= 768)
 
 const loading = ref(false)
 const exporting = ref(false)
@@ -370,5 +425,92 @@ function getConfidenceColor(confidence: number): string {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+/* Mobile card list styles */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-record-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.record-info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.mobile-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.info-row {
+  display: flex;
+  font-size: 14px;
+}
+
+.info-row .label {
+  color: #909399;
+  width: 50px;
+  flex-shrink: 0;
+}
+
+.info-row .value {
+  color: #303133;
+  flex: 1;
+}
+
+.confidence-bar {
+  flex: 1;
+  min-width: 120px;
+}
+
+.mobile-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .records-page {
+    padding: 12px 8px;
+  }
+
+  .filter-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .filter-form .el-form-item {
+    margin-bottom: 0;
+  }
+
+  .filter-form .el-form-item__content {
+    width: 100%;
+  }
 }
 </style>
