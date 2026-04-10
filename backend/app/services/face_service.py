@@ -22,6 +22,10 @@ from app.cache import redis_client
 
 log = structlog.get_logger(__name__)
 
+# 检测器选择：mediapipe（推荐）或 ssd
+# 可通过环境变量 FACE_DETECTOR=mediapipe|ssd 切换
+FACE_DETECTOR = os.environ.get("FACE_DETECTOR", "mediapipe").lower()
+
 # Prometheus 指标定义
 FACE_RECOG_TOTAL = Counter("face_recognition_requests_total", "人脸识别请求总数")
 FACE_RECOG_SUCCESS = Counter("face_recognition_success_total", "人脸识别成功数")
@@ -41,15 +45,19 @@ class FaceService:
         self.known_users: List[Dict] = []
         self.threshold = settings.FACE_THRESHOLD
         self._ready = False
+        self._detector_name = FACE_DETECTOR
+        self._ssd_net = None
+        self._mp_face_detection = None
         self._load_thread = threading.Thread(target=self._async_load, daemon=True)
         self._load_thread.start()
 
     def _async_load(self):
         """后台线程异步加载特征库，避免阻塞启动"""
         try:
+            self._init_detector()
             self._load_known_faces()
             self._ready = True
-            log.info("face_service_ready", known_faces=len(self.known_encodings))
+            log.info("face_service_ready", known_faces=len(self.known_encodings), detector=self._detector_name)
         except Exception as e:
             log.error("face_service_load_error", error=str(e))
             self._ready = False
@@ -118,10 +126,99 @@ class FaceService:
                 )
         KNOWN_FACES_GAUGE.set(len(self.known_encodings))
 
+    def _init_detector(self):
+        """初始化人脸检测器"""
+        if self._detector_name == "mediapipe":
+            self._init_mediapipe()
+        else:
+            self._init_ssd()
+
+    def _init_mediapipe(self):
+        """初始化 MediaPipe 人脸检测"""
+        import mediapipe as mp
+        self._mp_face_detection = mp.solutions.face_detection
+        self._mp_detector = self._mp_face_detection.FaceDetection(
+            model_selection=1,  # 1=远距离/小脸模型, 0=近距离
+            min_detection_confidence=0.5
+        )
+        log.info("mediapipe_detector_loaded")
+
+    def _init_ssd(self):
+        """加载 OpenCV SSD 人脸检测模型（fallback）"""
+        import urllib.request
+        model_dir = os.path.join(os.path.dirname(__file__), "../../models")
+        model_dir = os.path.abspath(model_dir)
+        os.makedirs(model_dir, exist_ok=True)
+        model_file = os.path.join(model_dir, "res10_300x300_ssd_iter_140000.caffemodel")
+        config_file = os.path.join(model_dir, "deploy.prototxt")
+
+        if not os.path.exists(model_file) or not os.path.exists(config_file):
+            log.info("downloading_ssd_model")
+            urllib.request.urlretrieve(
+                "https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel",
+                model_file
+            )
+            urllib.request.urlretrieve(
+                "https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/deploy.prototxt",
+                config_file
+            )
+
+        self._ssd_net = cv2.dnn.readNetFromCaffe(config_file, model_file)
+        log.info("ssd_model_loaded")
+
     def detect_faces(self, image: np.ndarray) -> List[Dict]:
-        # 使用 OpenCV SSD 人脸检测（比 dlib CNN 快 400 倍）
-        if not hasattr(self, '_ssd_net'):
-            self._load_ssd_model()
+        if self._detector_name == "mediapipe":
+            return self._detect_faces_mediapipe(image)
+        else:
+            return self._detect_faces_ssd(image)
+
+    def _detect_faces_mediapipe(self, image: np.ndarray) -> List[Dict]:
+        """MediaPipe 人脸检测 → dlib 编码"""
+        h, w = image.shape[:2]
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if image.shape[2] == 3 else image
+        results = self._mp_detector.process(rgb)
+
+        if not results.detections:
+            return []
+
+        locations = []
+        for detection in results.detections:
+            bbox = detection.location_data.relative_bounding_box
+            left = int(bbox.xmin * w)
+            top = int(bbox.ymin * h)
+            right = int((bbox.xmin + bbox.width) * w)
+            bottom = int((bbox.ymin + bbox.height) * h)
+            # 边界修正
+            left = max(0, left)
+            top = max(0, top)
+            right = min(w, right)
+            bottom = min(h, bottom)
+            # 扩展 15% 边距（face_recognition 编码需要包含完整人脸）
+            pad_x = int((right - left) * 0.15)
+            pad_y = int((bottom - top) * 0.15)
+            top = max(0, top - pad_y)
+            left = max(0, left - pad_x)
+            bottom = min(h, bottom + pad_y)
+            right = min(w, right + pad_x)
+            locations.append((top, right, bottom, left))  # face_recognition 格式
+
+        if not locations:
+            return []
+
+        # 用 face_recognition 编码（dlib）
+        encodings = face_recognition.face_encodings(image, locations)
+
+        results = []
+        for location, encoding in zip(locations, encodings):
+            quality = FaceUtils.get_face_quality(image, location)
+            results.append({"box": location, "encoding": encoding, "quality": quality})
+
+        return results
+
+    def _detect_faces_ssd(self, image: np.ndarray) -> List[Dict]:
+        """OpenCV SSD 人脸检测（fallback）"""
+        if not self._ssd_net:
+            self._init_ssd()
 
         h, w = image.shape[:2]
         blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
@@ -157,27 +254,8 @@ class FaceService:
         return results
 
     def _load_ssd_model(self):
-        """加载 OpenCV SSD 人脸检测模型"""
-        import urllib.request
-        model_dir = os.path.join(os.path.dirname(__file__), "../../models")
-        model_dir = os.path.abspath(model_dir)
-        os.makedirs(model_dir, exist_ok=True)
-        model_file = os.path.join(model_dir, "res10_300x300_ssd_iter_140000.caffemodel")
-        config_file = os.path.join(model_dir, "deploy.prototxt")
-
-        if not os.path.exists(model_file) or not os.path.exists(config_file):
-            log.info("downloading_ssd_model")
-            urllib.request.urlretrieve(
-                "https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel",
-                model_file
-            )
-            urllib.request.urlretrieve(
-                "https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/deploy.prototxt",
-                config_file
-            )
-
-        self._ssd_net = cv2.dnn.readNetFromCaffe(config_file, model_file)
-        log.info("ssd_model_loaded")
+        """兼容旧调用（已由 _init_ssd 替代）"""
+        self._init_ssd()
 
     def register_face(self, user_id: int, image: np.ndarray, db: Session) -> Dict:
         faces = self.detect_faces(image)

@@ -13,6 +13,7 @@ opencv-python-headless==4.8.1.78
 dlib==19.22.1
 numpy>=1.24.3,<2.0
 scipy>=1.10.1,<1.13
+mediapipe==0.10.18
 
 # Data Processing
 pandas==2.0.3
