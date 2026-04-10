@@ -2,6 +2,7 @@
 人脸识别服务
 Phase 2 增强：Prometheus 指标埋点
 Phase 3 增强：Redis 缓存 + 后台线程加载
+Phase 6: Python 3.12 + YuNet 检测器（OpenCV 4.9+ 内置）
 """
 import os
 import json
@@ -22,9 +23,9 @@ from app.cache import redis_client
 
 log = structlog.get_logger(__name__)
 
-# 检测器选择：mediapipe（推荐）或 ssd
-# 可通过环境变量 FACE_DETECTOR=mediapipe|ssd 切换
-FACE_DETECTOR = os.environ.get("FACE_DETECTOR", "mediapipe").lower()
+# 检测器选择：yunet（推荐，OpenCV 4.9+）或 ssd（兼容旧版）
+# 可通过环境变量 FACE_DETECTOR=yunet|ssd 切换
+FACE_DETECTOR = os.environ.get("FACE_DETECTOR", "ssd").lower()
 
 # Prometheus 指标定义
 FACE_RECOG_TOTAL = Counter("face_recognition_requests_total", "人脸识别请求总数")
@@ -46,8 +47,8 @@ class FaceService:
         self.threshold = settings.FACE_THRESHOLD
         self._ready = False
         self._detector_name = FACE_DETECTOR
+        self._yunet_detector = None
         self._ssd_net = None
-        self._mp_face_detection = None
         self._load_thread = threading.Thread(target=self._async_load, daemon=True)
         self._load_thread.start()
 
@@ -128,24 +129,43 @@ class FaceService:
 
     def _init_detector(self):
         """初始化人脸检测器"""
-        if self._detector_name == "mediapipe":
-            self._init_mediapipe()
+        if self._detector_name == "yunet":
+            # YuNet 需要 OpenCV 4.9+，检查是否可用
+            cv_version = tuple(int(x) for x in cv2.__version__.split('.')[:2])
+            if cv_version >= (4, 9) and hasattr(cv2, 'FaceDetectorYN_create'):
+                self._init_yunet()
+            else:
+                log.warning("yunet_not_available", opencv_version=cv2.__version__, fallback="ssd")
+                self._detector_name = "ssd"
+                self._init_ssd()
         else:
             self._init_ssd()
 
-    def _init_mediapipe(self):
-        """初始化 MediaPipe 人脸检测"""
-        import mediapipe as mp
-        self._mp_face_detection = mp.solutions.face_detection
-        self._mp_detector = self._mp_face_detection.FaceDetection(
-            model_selection=1,  # 1=远距离/小脸模型, 0=近距离
-            min_detection_confidence=0.5
+    def _init_yunet(self):
+        """初始化 OpenCV YuNet 人脸检测器（OpenCV 4.9+）"""
+        model_dir = os.path.join(os.path.dirname(__file__), "../../models")
+        model_dir = os.path.abspath(model_dir)
+        os.makedirs(model_dir, exist_ok=True)
+        model_file = os.path.join(model_dir, "face_detection_yunet_2023mar.onnx")
+
+        if not os.path.exists(model_file):
+            log.info("downloading_yunet_model")
+            import urllib.request
+            urllib.request.urlretrieve(
+                "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+                model_file
+            )
+
+        self._yunet_detector = cv2.FaceDetectorYN_create(
+            model_file, "", (320, 320),
+            score_threshold=0.7,
+            nms_threshold=0.3,
+            top_k=5
         )
-        log.info("mediapipe_detector_loaded")
+        log.info("yunet_detector_loaded")
 
     def _init_ssd(self):
         """加载 OpenCV SSD 人脸检测模型（fallback）"""
-        import urllib.request
         model_dir = os.path.join(os.path.dirname(__file__), "../../models")
         model_dir = os.path.abspath(model_dir)
         os.makedirs(model_dir, exist_ok=True)
@@ -154,6 +174,7 @@ class FaceService:
 
         if not os.path.exists(model_file) or not os.path.exists(config_file):
             log.info("downloading_ssd_model")
+            import urllib.request
             urllib.request.urlretrieve(
                 "https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel",
                 model_file
@@ -167,32 +188,26 @@ class FaceService:
         log.info("ssd_model_loaded")
 
     def detect_faces(self, image: np.ndarray) -> List[Dict]:
-        if self._detector_name == "mediapipe":
-            return self._detect_faces_mediapipe(image)
+        if self._detector_name == "yunet":
+            return self._detect_faces_yunet(image)
         else:
             return self._detect_faces_ssd(image)
 
-    def _detect_faces_mediapipe(self, image: np.ndarray) -> List[Dict]:
-        """MediaPipe 人脸检测 → dlib 编码"""
+    def _detect_faces_yunet(self, image: np.ndarray) -> List[Dict]:
+        """YuNet 人脸检测 → dlib 编码"""
         h, w = image.shape[:2]
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if image.shape[2] == 3 else image
-        results = self._mp_detector.process(rgb)
+        self._yunet_detector.setInputSize((w, h))
 
-        if not results.detections:
+        _, faces = self._yunet_detector.detect(image)
+        if faces is None:
             return []
 
         locations = []
-        for detection in results.detections:
-            bbox = detection.location_data.relative_bounding_box
-            left = int(bbox.xmin * w)
-            top = int(bbox.ymin * h)
-            right = int((bbox.xmin + bbox.width) * w)
-            bottom = int((bbox.ymin + bbox.height) * h)
-            # 边界修正
-            left = max(0, left)
-            top = max(0, top)
-            right = min(w, right)
-            bottom = min(h, bottom)
+        for face in faces:
+            x, y, fw, fh = int(face[0]), int(face[1]), int(face[2]), int(face[3])
+            # YuNet 的 x,y 是左上角，fw,fh 是宽高
+            left, top = x, y
+            right, bottom = x + fw, y + fh
             # 扩展 15% 边距（face_recognition 编码需要包含完整人脸）
             pad_x = int((right - left) * 0.15)
             pad_y = int((bottom - top) * 0.15)
@@ -231,19 +246,17 @@ class FaceService:
             if confidence > 0.6:
                 box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
                 left, top, right, bottom = int(box[0]), int(box[1]), int(box[2]), int(box[3])
-                # 扩展 10% 边距（face_recognition 编码需要包含完整人脸）
                 pad_x = int((right - left) * 0.1)
                 pad_y = int((bottom - top) * 0.1)
                 top = max(0, top - pad_y)
                 left = max(0, left - pad_x)
                 bottom = min(h, bottom + pad_y)
                 right = min(w, right + pad_x)
-                locations.append((top, right, bottom, left))  # face_recognition 格式
+                locations.append((top, right, bottom, left))
 
         if not locations:
             return []
 
-        # 用 face_recognition 编码（dlib）
         encodings = face_recognition.face_encodings(image, locations)
 
         results = []
@@ -254,7 +267,7 @@ class FaceService:
         return results
 
     def _load_ssd_model(self):
-        """兼容旧调用（已由 _init_ssd 替代）"""
+        """兼容旧调用"""
         self._init_ssd()
 
     def register_face(self, user_id: int, image: np.ndarray, db: Session) -> Dict:
@@ -314,7 +327,7 @@ class FaceService:
         if confidence >= self.threshold:
             identified_user = self.known_users[min_idx]
             user_id = identified_user["id"]
-            
+
             # Phase 3 缓存优化：同一用户 3 秒内不重复识别
             cache_key = f"recog:{user_id}"
             cached = redis_client.get(cache_key)
@@ -322,7 +335,7 @@ class FaceService:
                 CACHE_HIT.inc()
                 result = json.loads(cached)
                 return (result.get("user"), result.get("confidence", 0.0))
-            
+
             # 缓存识别结果
             redis_client.set(
                 cache_key,
