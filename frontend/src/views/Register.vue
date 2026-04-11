@@ -180,19 +180,19 @@ async function capturePhoto() {
     try {
       const detectResult = await faceApi.detectFace(result.file)
 
-      if (detectResult.faces_detected === 0) {
+      if (detectResult.data.faces_detected === 0) {
         ElMessage.warning('未检测到人脸，请重拍')
         retake()
         return
       }
 
-      if (detectResult.faces_detected > 1) {
+      if (detectResult.data.faces_detected > 1) {
         ElMessage.warning('检测到多张人脸，请确保只有一人')
         retake()
         return
       }
 
-      faceQuality.value = detectResult.faces[0].quality
+      faceQuality.value = detectResult.data.faces[0].quality
     } catch (error) {
       console.error('Face detection failed:', error)
       ElMessage.error('人脸检测失败，请重拍')
@@ -234,7 +234,7 @@ async function handleSubmit() {
       face_image: capturedFile.value
     }) as Record<string, unknown>
 
-    if (result.face_detected) {
+    if (result.data.hasFaceEncoding || result.hasFaceEncoding) {
       ElMessage.success('注册成功，人脸已录入')
     } else {
       ElMessage.success('用户创建成功，但人脸未成功录入，请稍后在用户管理中补充')

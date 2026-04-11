@@ -7,11 +7,11 @@ export function getUsers(params?: {
   department?: string
   status?: number
 }): Promise<UserListResponse> {
-  return get('/api/users', params as Record<string, unknown>)
+  return get('/users', params as Record<string, unknown>)
 }
 
 export function getUser(id: number): Promise<User> {
-  return get(`/api/users/${id}`)
+  return get(`/users/${id}`)
 }
 
 export function createUser(data: {
@@ -32,9 +32,9 @@ export function createUser(data: {
     formData.append('face_image', data.face_image)
   }
 
-  return post('/api/users', formData)
+  return post('/users', formData)
 }
 
 export function deleteUser(id: number): Promise<{ code: number; message: string }> {
-  return del(`/api/users/${id}`)
+  return del(`/users/${id}`)
 }

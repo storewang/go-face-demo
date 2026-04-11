@@ -234,8 +234,8 @@ async function fetchDevices() {
       page_size: pageSize.value,
       status: statusFilter.value
     })
-    devices.value = res.items
-    total.value = res.total
+    devices.value = res.data?.items || res.items || []
+    total.value = res.data?.total || res.total || 0
   } catch (e) {
     ElMessage.error('获取设备列表失败')
   } finally {

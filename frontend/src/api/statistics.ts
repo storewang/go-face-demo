@@ -3,7 +3,7 @@ import type { DailyStats, UserStats, TrendData } from '@/types/statistics'
 
 export function getDailyStats(dateStr?: string): Promise<DailyStats> {
   const params = dateStr ? { date_str: dateStr } : undefined
-  return get('/api/statistics/daily', params as Record<string, unknown>)
+  return get('/statistics/daily', params as Record<string, unknown>)
 }
 
 export function getUserStats(
@@ -13,9 +13,9 @@ export function getUserStats(
     end_date?: string
   }
 ): Promise<UserStats> {
-  return get(`/api/statistics/user/${userId}`, params as Record<string, unknown>)
+  return get(`/statistics/user/${userId}`, params as Record<string, unknown>)
 }
 
 export function getTrend(days: number = 30): Promise<TrendData> {
-  return get('/api/statistics/trend', { days } as Record<string, unknown>)
+  return get('/statistics/trend', { days } as Record<string, unknown>)
 }

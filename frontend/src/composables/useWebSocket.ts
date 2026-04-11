@@ -14,9 +14,14 @@ interface RegisterResult {
   device_name: string
 }
 
+
+function buildWsUrl(): string {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return proto + '//' + window.location.host + '/ws/face-stream';
+}
 export function useWebSocket(options: WebSocketOptions = {}) {
   const {
-    url = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/face-stream',
+    url = import.meta.env.VITE_WS_URL || buildWsUrl(),
     autoReconnect = true,
     reconnectInterval = 3000,
     maxReconnectAttempts = 5,

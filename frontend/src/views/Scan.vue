@@ -103,7 +103,7 @@
 
               <div class="user-details">
                 <div class="user-name">{{ lastResult.user?.name }}</div>
-                <div class="user-id">工号: {{ lastResult.user?.employee_id }}</div>
+                <div class="user-id">工号: {{ lastResult.user?.employeeId }}</div>
                 <div class="user-dept">{{ lastResult.user?.department }}</div>
               </div>
             </div>
@@ -332,8 +332,8 @@ function startFrameSending() {
     const frame = captureFrame()
     if (frame) {
       send({
-        type: 'frame',
-        data: frame
+        type: 'image',
+        image: frame
       })
     }
   }, 200)
@@ -357,19 +357,19 @@ function handleWebSocketMessage(data: Record<string, unknown>) {
   if (data.type === 'status') {
     statusMessage.value = (data.data as Record<string, string>).message
     statusIcon.value = Loading
-  } else if (data.type === 'result') {
-    lastResult.value = data.data as Record<string, unknown>
+  } else if (data.type === 'recognition_result') {
+    // 后端直接在顶层返回 success/user/confidence 等字段
+    lastResult.value = data as unknown as Record<string, unknown>
 
-    if ((data.data as Record<string, unknown>).success) {
+    if (data.success) {
       statusMessage.value = ''
       showDoorOpen.value = true
 
-      const resultData = data.data as Record<string, unknown>
-      const userData = resultData.user as Record<string, unknown>
+      const userData = data.user as Record<string, unknown>
       scanHistory.value.unshift({
         id: Date.now(),
         name: userData.name,
-        action: resultData.action_type === 'CHECK_IN' ? '上班打卡' : '下班打卡',
+        action: '识别成功',
         time: formatTime(new Date()),
         success: true
       })
@@ -378,7 +378,7 @@ function handleWebSocketMessage(data: Record<string, unknown>) {
         showDoorOpen.value = false
       }, 3000)
     } else {
-      statusMessage.value = (data.data as Record<string, string>).message || '识别失败'
+      statusMessage.value = (data.message as string) || '未识别到人脸'
       statusIcon.value = WarningFilled
     }
 

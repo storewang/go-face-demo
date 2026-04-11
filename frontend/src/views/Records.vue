@@ -317,8 +317,8 @@ async function fetchRecords() {
 
   try {
     const res = await attendanceApi.getAttendance(queryParams)
-    records.value = res.items
-    total.value = res.total
+    records.value = res.data?.items || res.items || []
+    total.value = res.data?.total || res.total || 0
   } catch (error: unknown) {
     const err = error as Error
     ElMessage.error('获取记录失败: ' + err.message)

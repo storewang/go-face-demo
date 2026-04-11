@@ -17,7 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
     loggingIn.value = true
     try {
       const res = await post<{ code: number; data: { token: string; role: UserRole; name: string }; message: string }>(
-        '/api/auth/login',
+        '/auth/login',
         { password }
       )
       token.value = res.data.token

@@ -2,11 +2,11 @@ import { upload } from '@/utils/request'
 import type { FaceDetectResponse, FaceVerifyResponse } from '@/types/face'
 
 export function detectFace(image: File): Promise<FaceDetectResponse> {
-  return upload('/api/face/detect', image, 'image')
+  return upload('/face/detect', image, 'image')
 }
 
 export function recognizeFace(image: File): Promise<FaceVerifyResponse> {
-  return upload('/api/face/recognize', image, 'image')
+  return upload('/face/recognize', image, 'image')
 }
 
 export function registerFace(userId: number, image: File): Promise<{
@@ -16,5 +16,5 @@ export function registerFace(userId: number, image: File): Promise<{
   face_quality: string | null
   message: string
 }> {
-  return upload(`/api/face/register/${userId}`, image, 'image')
+  return upload(`/face/register/${userId}`, image, 'image')
 }

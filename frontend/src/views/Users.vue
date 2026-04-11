@@ -13,7 +13,8 @@
         :data="users"
         v-loading="loading"
         stripe
-        border
+        :cell-style="{ backgroundColor: '#fff' }"
+        :header-cell-style="{ backgroundColor: '#f5f7fa' }"
         style="width: 100%"
       >
         <el-table-column prop="id" label="ID" width="80" />
@@ -51,18 +52,17 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button
               v-if="!row.face_encoding_path"
               type="primary"
-              link
+              size="small"
               @click="openFaceDialog(row)"
             >
-              <el-icon><Camera /></el-icon>
               人脸采集
             </el-button>
-            <el-button type="danger" link @click="handleDelete(row)">
+            <el-button type="danger" size="small" @click="handleDelete(row)">
               删除
             </el-button>
           </template>
@@ -112,7 +112,7 @@
               size="small"
               @click="openFaceDialog(row)"
             >
-              <el-icon><Camera /></el-icon>
+              <el-icon><CameraIcon /></el-icon>
               人脸采集
             </el-button>
             <el-button type="danger" size="small" @click="handleDelete(row)">
@@ -220,8 +220,17 @@ async function fetchUsers() {
       page: currentPage.value,
       page_size: pageSize.value
     })
-    users.value = res.items
-    total.value = res.total
+    const items = res.data?.items || res.items || []
+    // 兼容 Java camelCase 和 Python snake_case
+    users.value = items.map((u: Record<string, any>) => ({
+      ...u,
+      employee_id: u.employee_id || u.employeeId,
+      face_encoding_path: u.face_encoding_path ?? u.hasFaceEncoding,
+      created_at: u.created_at || u.createdAt,
+      updated_at: u.updated_at || u.updatedAt,
+      department: u.department,
+    }))
+    total.value = res.data?.total || res.total || 0
   } catch (error: unknown) {
     const err = error as Error
     ElMessage.error('获取用户列表失败: ' + err.message)
@@ -353,21 +362,22 @@ async function capturePhoto() {
 
   detecting.value = true
   try {
-    const detectResult = await faceApi.detectFace(result.file)
+    const detectResult = await faceApi.detectFace(result.file) as Record<string, any>
+    const detectData = detectResult.data || detectResult
 
-    if (detectResult.faces_detected === 0) {
+    if (detectData.faces_detected === 0) {
       ElMessage.warning('未检测到人脸，请重拍')
       retake()
       return
     }
 
-    if (detectResult.faces_detected > 1) {
+    if (detectData.faces_detected > 1) {
       ElMessage.warning('检测到多张人脸，请确保只有一人')
       retake()
       return
     }
 
-    faceQuality.value = detectResult.faces[0].quality
+    faceQuality.value = detectData.faces[0].quality
 
     if (faceQuality.value === 'poor') {
       ElMessage.warning('人脸质量较差，请调整光线或位置后重拍')
@@ -520,6 +530,34 @@ async function confirmRegister() {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Force white background on all table cells */
+:deep(.el-table) {
+  background-color: #fff !important;
+}
+:deep(.el-table th.el-table__cell),
+:deep(.el-table td.el-table__cell) {
+  background-color: #fff !important;
+}
+:deep(.el-table .el-table__cell) {
+  background-color: #fff !important;
+}
+:deep(.el-table__header-wrapper),
+:deep(.el-table__body-wrapper) {
+  background-color: #fff !important;
+}
+:deep(.el-table__row) {
+  background-color: #fff !important;
+}
+:deep(.el-table__row--striped) {
+  background-color: #fafafa !important;
+}
+:deep(.el-table__gutter) {
+  background-color: #fff !important;
+}
+:deep(.el-table__fixed-right-patch) {
+  background-color: #fff !important;
 }
 
 /* Mobile responsive */

@@ -9,7 +9,7 @@ export interface Profile extends User {
 }
 
 export function getProfile(): Promise<Profile> {
-  return get('/api/self/profile')
+  return get('/self/profile')
 }
 
 export function getMyAttendance(params?: {
@@ -17,13 +17,13 @@ export function getMyAttendance(params?: {
   page?: number
   page_size?: number
 }): Promise<AttendanceListResponse> {
-  return get('/api/self/attendance', params as Record<string, unknown>)
+  return get('/self/attendance', params as Record<string, unknown>)
 }
 
 export function getTodayAttendance(): Promise<DailyStats> {
-  return get('/api/self/attendance/today')
+  return get('/self/attendance/today')
 }
 
 export function unregisterFace(): Promise<{ code: number; message: string }> {
-  return del('/api/self/face')
+  return del('/self/face')
 }

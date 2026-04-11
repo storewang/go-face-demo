@@ -10,7 +10,7 @@ export function getAttendance(params?: {
   action_type?: string
   result?: string
 }): Promise<AttendanceListResponse> {
-  return get('/api/attendance', params as Record<string, unknown>)
+  return get('/attendance', params as Record<string, unknown>)
 }
 
 export function checkIn(image: File, employeeId?: string): Promise<CheckInResponse> {
@@ -20,7 +20,7 @@ export function checkIn(image: File, employeeId?: string): Promise<CheckInRespon
     formData.append('employee_id', employeeId)
   }
 
-  return post('/api/attendance/check-in', formData)
+  return post('/attendance/check-in', formData)
 }
 
 export function checkOut(image: File, employeeId?: string): Promise<CheckInResponse> {
@@ -30,7 +30,7 @@ export function checkOut(image: File, employeeId?: string): Promise<CheckInRespo
     formData.append('employee_id', employeeId)
   }
 
-  return post('/api/attendance/check-out', formData)
+  return post('/attendance/check-out', formData)
 }
 
 export function exportAttendance(params: {
@@ -39,12 +39,12 @@ export function exportAttendance(params: {
   employee_id?: string
   format?: string
 }): Promise<Blob> {
-  return download('/api/attendance/export', params as Record<string, unknown>)
+  return download('/attendance/export', params as Record<string, unknown>)
 }
 
 export function getStats(params?: {
   start_date?: string
   end_date?: string
 }): Promise<AttendanceStats> {
-  return get('/api/attendance/stats', params as Record<string, unknown>)
+  return get('/attendance/stats', params as Record<string, unknown>)
 }
