@@ -270,7 +270,7 @@ async function startScanning() {
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: isMobile.value ? 320 : 640, height: isMobile.value ? 240 : 480, facingMode: 'user' },
+      video: { width: isMobile.value ? 320 : 480, height: isMobile.value ? 240 : 360, facingMode: 'user' },
       audio: false
     })
 
@@ -336,21 +336,21 @@ function startFrameSending() {
         image: frame
       })
     }
-  }, 200)
+  }, 400)
 }
 
 function captureFrame(): string | null {
   if (!videoRef.value) return null
 
   const canvas = document.createElement('canvas')
-  canvas.width = isMobile.value ? 320 : 640
-  canvas.height = isMobile.value ? 240 : 480
+  canvas.width = isMobile.value ? 320 : 480
+  canvas.height = isMobile.value ? 240 : 360
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
   ctx.drawImage(videoRef.value, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
+  return canvas.toDataURL('image/jpeg', 0.75).split(',')[1]
 }
 
 function handleWebSocketMessage(data: Record<string, unknown>) {
