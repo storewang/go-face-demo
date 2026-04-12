@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config import settings
 from app.database import Base
-from app.models import User, AttendanceLog, SystemConfig
+from app.models import User, AttendanceLog, SystemConfig, Device
 
 config = context.config
 
