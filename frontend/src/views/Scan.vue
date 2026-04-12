@@ -332,8 +332,8 @@ function startFrameSending() {
     const frame = captureFrame()
     if (frame) {
       send({
-        type: 'image',
-        image: frame
+        type: 'frame',
+        data: frame
       })
     }
   }, 400)
@@ -355,21 +355,22 @@ function captureFrame(): string | null {
 
 function handleWebSocketMessage(data: Record<string, unknown>) {
   if (data.type === 'status') {
-    statusMessage.value = (data.data as Record<string, string>).message
+    const statusData = (data.data || data) as Record<string, string>
+    statusMessage.value = statusData.message || ''
     statusIcon.value = Loading
-  } else if (data.type === 'recognition_result') {
-    // 后端直接在顶层返回 success/user/confidence 等字段
-    lastResult.value = data as unknown as Record<string, unknown>
+  } else if (data.type === 'result') {
+    const resultData = (data.data || data) as Record<string, unknown>
+    lastResult.value = resultData
 
-    if (data.success) {
+    if (resultData.success) {
       statusMessage.value = ''
       showDoorOpen.value = true
 
-      const userData = data.user as Record<string, unknown>
+      const userData = (resultData.user || {}) as Record<string, unknown>
       scanHistory.value.unshift({
         id: Date.now(),
         name: userData.name,
-        action: '识别成功',
+        action: resultData.action_type === 'CHECK_OUT' ? '下班打卡' : '上班打卡',
         time: formatTime(new Date()),
         success: true
       })
@@ -378,7 +379,7 @@ function handleWebSocketMessage(data: Record<string, unknown>) {
         showDoorOpen.value = false
       }, 3000)
     } else {
-      statusMessage.value = (data.message as string) || '未识别到人脸'
+      statusMessage.value = (resultData.message as string) || '未识别到人脸'
       statusIcon.value = WarningFilled
     }
 
@@ -391,6 +392,14 @@ function handleWebSocketMessage(data: Record<string, unknown>) {
         }
       }, 3000)
     }
+  } else if (data.type === 'error') {
+    const errData = (data.data || data) as Record<string, string>
+    statusMessage.value = errData.message || '发生错误'
+    statusIcon.value = WarningFilled
+  } else if (data.type === 'registered') {
+    const regData = (data.data || data) as Record<string, string>
+    currentDeviceName.value = regData.device_name || ''
+    ElMessage.success(`已连接到设备: ${regData.device_name || ''}`)
   }
 }
 
