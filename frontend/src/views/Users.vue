@@ -52,15 +52,14 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="200">
           <template #default="{ row }">
             <el-button
-              v-if="!row.face_encoding_path"
               type="primary"
               size="small"
               @click="openFaceDialog(row)"
             >
-              人脸采集
+              {{ row.face_encoding_path ? '更新人脸' : '人脸采集' }}
             </el-button>
             <el-button type="danger" size="small" @click="handleDelete(row)">
               删除
@@ -107,13 +106,12 @@
 
           <div class="mobile-card-actions">
             <el-button
-              v-if="!row.face_encoding_path"
               type="primary"
               size="small"
               @click="openFaceDialog(row)"
             >
               <el-icon><CameraIcon /></el-icon>
-              人脸采集
+              {{ row.face_encoding_path ? '更新人脸' : '人脸采集' }}
             </el-button>
             <el-button type="danger" size="small" @click="handleDelete(row)">
               删除
@@ -138,7 +136,7 @@
     <!-- 人脸采集对话框 -->
     <el-dialog
       v-model="faceDialogVisible"
-      :title="`人脸采集 - ${currentUser?.name} (${currentUser?.employee_id})`"
+      :title="`${currentUser?.face_encoding_path ? '更新人脸' : '人脸采集'} - ${currentUser?.name} (${currentUser?.employee_id})`"
       :width="isMobile ? '90%' : '680px'"
       :close-on-click-modal="false"
       @close="closeFaceDialog"

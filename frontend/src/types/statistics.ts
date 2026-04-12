@@ -1,28 +1,20 @@
-// 每日统计
+// 每日统计（匹配后端 /api/statistics/daily 实际返回）
 export interface DailyStats {
   date: string
-  total_users: number
-  check_in_count: number
-  check_out_count: number
-  attendance_count: number
-  success_count: number
-  fail_count: number
-  normal_count: number
-  late_count: number
-  early_count: number
+  total_employees: number
+  present_count: number
   absent_count: number
+  action_breakdown: Record<string, number>
+  attendance_rate: number
 }
 
-// 个人统计
+// 个人统计（匹配后端 /api/statistics/user/{id} 实际返回）
 export interface UserStats {
   user_id: number
-  user_name: string
-  attendance_count: number
-  normal_count: number
-  late_count: number
-  early_count: number
-  absent_count: number
-  success_rate: number
+  period: { start: string; end: string }
+  total_records: number
+  work_days: number
+  daily_summary: Record<string, { first: string | null; last: string | null }>
 }
 
 // 趋势数据单条

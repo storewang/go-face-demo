@@ -13,37 +13,37 @@
         <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
             <div class="stat-label">总用户数</div>
-            <el-statistic :value="dailyStats.total_users" />
+            <el-statistic :value="dailyStats.total_employees" />
           </el-card>
         </el-col>
         <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
-            <div class="stat-label">签到总数</div>
-            <el-statistic :value="dailyStats.check_in_count" />
+            <div class="stat-label">出勤人数</div>
+            <el-statistic :value="dailyStats.present_count" />
           </el-card>
         </el-col>
         <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
-            <div class="stat-label">签出总数</div>
-            <el-statistic :value="dailyStats.check_out_count" />
+            <div class="stat-label">缺勤人数</div>
+            <el-statistic :value="dailyStats.absent_count" />
           </el-card>
         </el-col>
         <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
-            <div class="stat-label">考勤总数</div>
-            <el-statistic :value="dailyStats.attendance_count" />
+            <div class="stat-label">上班打卡</div>
+            <el-statistic :value="dailyStats.action_breakdown?.CHECK_IN || 0" />
           </el-card>
         </el-col>
         <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
-            <div class="stat-label">成功次数</div>
-            <el-statistic :value="dailyStats.success_count" />
+            <div class="stat-label">下班打卡</div>
+            <el-statistic :value="dailyStats.action_breakdown?.CHECK_OUT || 0" />
           </el-card>
         </el-col>
         <el-col :xs="12" :sm="8">
           <el-card shadow="hover" class="stat-card">
-            <div class="stat-label">失败次数</div>
-            <el-statistic :value="dailyStats.fail_count" />
+            <div class="stat-label">出勤率</div>
+            <el-statistic :value="dailyStats.attendance_rate" suffix="%" />
           </el-card>
         </el-col>
       </el-row>
@@ -69,7 +69,7 @@
                 {{ todayAttendance ? '已打卡' : '未打卡' }}
               </el-tag>
               <span v-if="todayAttendance" style="margin-left: 12px">
-                签到: {{ dailyStats.check_in_count > 0 ? '已记录' : '--' }}
+                签到: {{ dailyStats.action_breakdown?.CHECK_IN > 0 ? '已记录' : '--' }}
               </span>
             </div>
             <div v-else>
@@ -105,7 +105,7 @@ const quickCards = [
 const goto = (path: string) => router.push(path)
 
 const isLoggedIn = computed(() => !!localStorage.getItem('admin_token'))
-const todayAttendance = computed(() => dailyStats.value ? dailyStats.value.check_in_count > 0 : false)
+const todayAttendance = computed(() => dailyStats.value ? dailyStats.value.present_count > 0 : false)
 
 onMounted(async () => {
   loading.value = true

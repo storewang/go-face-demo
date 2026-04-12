@@ -117,14 +117,13 @@ onMounted(async () => {
       statisticsApi.getDailyStats()
     ])
 
-    stats.value.userCount = dailyStats.total_users
-    stats.value.checkInCount = dailyStats.check_in_count
-    stats.value.checkOutCount = dailyStats.check_out_count
+    stats.value.userCount = dailyStats.total_employees
+    stats.value.checkInCount = dailyStats.action_breakdown?.CHECK_IN || 0
+    stats.value.checkOutCount = dailyStats.action_breakdown?.CHECK_OUT || 0
 
-    if (dailyStats.attendance_count > 0) {
-      stats.value.successRate = Number(
-        ((dailyStats.success_count / dailyStats.attendance_count) * 100).toFixed(1)
-      )
+    const totalAttendance = (dailyStats.action_breakdown?.CHECK_IN || 0) + (dailyStats.action_breakdown?.CHECK_OUT || 0)
+    if (totalAttendance > 0) {
+      stats.value.successRate = dailyStats.attendance_rate
     }
   } catch {
     // 静默处理，显示默认值 0
