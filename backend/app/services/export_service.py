@@ -1,6 +1,8 @@
-import pandas as pd
 from typing import List
 from io import BytesIO
+
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 from app.models import AttendanceLog
 
@@ -10,38 +12,44 @@ class ExportService:
     def export_attendance_to_excel(
         records: List[AttendanceLog], start_date: str = None, end_date: str = None
     ) -> BytesIO:
-        data = []
+        """流式导出考勤记录到 Excel，逐行写入避免全量 DataFrame 内存占用"""
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "考勤记录"
+
+        # 写表头
+        headers = ["记录ID", "工号", "姓名", "类型", "置信度", "结果", "时间"]
+        ws.append(headers)
+
+        # 逐行写入数据
         for record in records:
-            data.append(
-                {
-                    "记录ID": record.id,
-                    "工号": record.employee_id or "",
-                    "姓名": record.name or "",
-                    "类型": "上班" if record.action_type == "CHECK_IN" else "下班",
-                    "置信度": f"{record.confidence:.2f}" if record.confidence else "",
-                    "结果": "成功" if record.result == "SUCCESS" else "失败",
-                    "时间": record.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            ws.append(
+                [
+                    record.id,
+                    record.employee_id or "",
+                    record.name or "",
+                    "上班" if record.action_type == "CHECK_IN" else "下班",
+                    f"{record.confidence:.2f}" if record.confidence else "",
+                    "成功" if record.result == "SUCCESS" else "失败",
+                    record.created_at.strftime("%Y-%m-%d %H:%M:%S")
                     if record.created_at
                     else "",
-                }
+                ]
             )
 
-        df = pd.DataFrame(data)
+        # 自动调整列宽
+        for idx, col in enumerate(headers, 1):
+            max_length = len(col)
+            for row in ws.iter_rows(
+                min_row=2, min_col=idx, max_col=idx, values_only=True
+            ):
+                cell_len = len(str(row[0])) if row[0] else 0
+                if cell_len > max_length:
+                    max_length = cell_len
+            ws.column_dimensions[get_column_letter(idx)].width = min(max_length + 2, 50)
+
         output = BytesIO()
-
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="考勤记录", index=False)
-
-            worksheet = writer.sheets["考勤记录"]
-            for idx, col in enumerate(df.columns):
-                max_length = max(df[col].astype(str).map(len).max(), len(col)) + 2
-                col_letter = (
-                    chr(65 + idx)
-                    if idx < 26
-                    else chr(64 + idx // 26) + chr(65 + idx % 26)
-                )
-                worksheet.column_dimensions[col_letter].width = min(max_length, 50)
-
+        wb.save(output)
         output.seek(0)
         return output
 
@@ -49,6 +57,7 @@ class ExportService:
     def export_attendance_summary(
         records: List[AttendanceLog], start_date: str, end_date: str
     ) -> BytesIO:
+        """流式导出考勤汇总到 Excel"""
         summary = {}
         for record in records:
             key = record.employee_id or "未知"
@@ -72,11 +81,20 @@ class ExportService:
             else:
                 summary[key]["失败次数"] += 1
 
-        df = pd.DataFrame(list(summary.values()))
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="考勤汇总", index=False)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "考勤汇总"
 
+        # 写表头
+        headers = ["工号", "姓名", "上班次数", "下班次数", "成功次数", "失败次数"]
+        ws.append(headers)
+
+        # 逐行写入汇总数据
+        for row_data in summary.values():
+            ws.append([row_data[h] for h in headers])
+
+        output = BytesIO()
+        wb.save(output)
         output.seek(0)
         return output
 
