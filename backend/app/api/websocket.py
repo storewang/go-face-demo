@@ -20,57 +20,103 @@ log = structlog.get_logger(__name__)
 
 FRAME_BUFFER_SIZE = 5
 COOLDOWN_SECONDS = 3
+HEARTBEAT_TIMEOUT = 30
+
+
+def _clear_buffers(session: dict):
+    session["frames"] = []
+    session["face_locations"] = []
+    session["face_keypoints"] = []
+
+
+async def _send_status(websocket: WebSocket, stage: str, message: str):
+    await manager.send_json(
+        websocket,
+        {"type": "status", "data": {"stage": stage, "message": message}},
+    )
+
+
+async def _check_liveness(session: dict) -> bool:
+    try:
+        liveness = get_liveness_service()
+        liveness_result = liveness.check_liveness(
+            session["frames"], session["face_locations"], session["face_keypoints"]
+        )
+        if not liveness_result["passed"]:
+            return False
+    except Exception:
+        pass
+    return True
+
+
+async def _record_attendance(
+    session: dict, user: dict, confidence: float, image: np.ndarray
+):
+    db = SessionLocal()
+    try:
+        snapshot_filename = (
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user['employee_id']}.jpg"
+        )
+        snapshot_path = str(settings.IMAGES_DIR / "snapshots" / snapshot_filename)
+        (settings.IMAGES_DIR / "snapshots").mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(snapshot_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_records = (
+            db.query(AttendanceLog)
+            .filter(
+                AttendanceLog.user_id == user["id"],
+                AttendanceLog.created_at >= today_start,
+            )
+            .count()
+        )
+
+        action_type = ActionType.CHECK_OUT if today_records > 0 else ActionType.CHECK_IN
+
+        record_data = {
+            "user_id": user["id"],
+            "employee_id": user["employee_id"],
+            "name": user["name"],
+            "action_type": action_type,
+            "confidence": confidence,
+            "snapshot_path": snapshot_path,
+            "result": ResultType.SUCCESS,
+        }
+        if session.get("device_id"):
+            record_data["device_id"] = session["device_id"]
+
+        db.add(AttendanceLog(**record_data))
+        db.commit()
+
+        notification_service.attendance_recorded(user["name"], action_type.value)
+        return action_type
+    finally:
+        db.close()
 
 
 async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
-    # Phase 3 性能优化：跳帧逻辑（如果上一帧还在处理，丢弃当前帧）
     if session.get("processing", False):
         return
 
     session["processing"] = True
     try:
-        # === 原有处理逻辑 ===
         image_bytes = base64.b64decode(frame_data)
         image = FaceUtils.load_image_from_bytes(image_bytes)
 
         faces = face_service.detect_faces(image)
 
         if len(faces) == 0:
-            await manager.send_json(
-                websocket,
-                {
-                    "type": "status",
-                    "data": {
-                        "stage": "detecting",
-                        "message": "未检测到人脸，请对准摄像头",
-                    },
-                },
-            )
+            await _send_status(websocket, "detecting", "未检测到人脸，请对准摄像头")
             return
 
         if len(faces) > 1:
-            await manager.send_json(
-                websocket,
-                {
-                    "type": "status",
-                    "data": {
-                        "stage": "detecting",
-                        "message": "检测到多张人脸，请确保只有一人",
-                    },
-                },
-            )
+            await _send_status(websocket, "detecting", "检测到多张人脸，请确保只有一人")
             return
 
         face = faces[0]
 
         if face["quality"] == "poor":
-            await manager.send_json(
-                websocket,
-                {
-                    "type": "status",
-                    "data": {"stage": "quality_check", "message": "请调整光线或位置"},
-                },
-            )
+            await _send_status(websocket, "quality_check", "请调整光线或位置")
             return
 
         session["frames"].append(image)
@@ -79,118 +125,58 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
         session["face_keypoints"].append(np.array(kps) if kps else None)
 
         if len(session["frames"]) < FRAME_BUFFER_SIZE:
-            await manager.send_json(
+            await _send_status(
                 websocket,
-                {
-                    "type": "status",
-                    "data": {
-                        "stage": "liveness_check",
-                        "message": f"请保持不动 ({len(session['frames'])}/{FRAME_BUFFER_SIZE})",
-                    },
-                },
+                "liveness_check",
+                f"请保持不动 ({len(session['frames'])}/{FRAME_BUFFER_SIZE})",
             )
             return
 
-        liveness_passed = True
-        try:
+        liveness_ok = await _check_liveness(session)
+        if not liveness_ok:
             liveness = get_liveness_service()
             liveness_result = liveness.check_liveness(
                 session["frames"], session["face_locations"], session["face_keypoints"]
             )
+            msg = (
+                liveness_result.get("message", "请眨眼或点头")
+                if liveness_result
+                else "活体检测未通过"
+            )
+            await _send_status(websocket, "liveness_check", msg)
+            _clear_buffers(session)
+            return
 
-            if not liveness_result["passed"]:
-                await manager.send_json(
-                    websocket,
-                    {
-                        "type": "status",
-                        "data": {
-                            "stage": "liveness_check",
-                            "message": liveness_result["message"],
-                        },
-                    },
-                )
-                session["frames"] = []
-                session["face_locations"] = []
-                session["face_keypoints"] = []
-                return
-        except Exception:
-            liveness_passed = False
+        result = face_service.verify_user(image)
 
-        user, confidence = face_service.recognize_face(face["encoding"])
-
-        if user is None:
-            notification_service.face_recognized("未知", confidence, "failed")
+        if not result["success"]:
+            reason = result.get("reason", "unknown")
+            notification_service.face_recognized(
+                "未知", result.get("confidence", 0), "failed"
+            )
             await manager.send_json(
                 websocket,
                 {
                     "type": "result",
                     "data": {
                         "success": False,
-                        "reason": "face_not_recognized",
-                        "confidence": confidence,
-                        "message": "未识别到注册用户",
+                        "reason": reason,
+                        "confidence": result.get("confidence", 0),
+                        "message": f"识别失败: {reason}",
                     },
                 },
             )
-            session["frames"] = []
-            session["face_locations"] = []
-            session["face_keypoints"] = []
+            _clear_buffers(session)
             return
 
-        db = SessionLocal()
-        try:
-            snapshot_filename = (
-                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user['employee_id']}.jpg"
-            )
-            snapshot_path = str(settings.IMAGES_DIR / "snapshots" / snapshot_filename)
-            (settings.IMAGES_DIR / "snapshots").mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(
-                snapshot_path, cv2.cvtColor(session["frames"][-1], cv2.COLOR_RGB2BGR)
-            )
-
-            today_start = datetime.now().replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
-            today_records = (
-                db.query(AttendanceLog)
-                .filter(
-                    AttendanceLog.user_id == user["id"],
-                    AttendanceLog.created_at >= today_start,
-                )
-                .count()
-            )
-
-            action_type = (
-                ActionType.CHECK_OUT if today_records > 0 else ActionType.CHECK_IN
-            )
-
-            # 构建考勤记录，包含设备信息
-            record_data = {
-                "user_id": user["id"],
-                "employee_id": user["employee_id"],
-                "name": user["name"],
-                "action_type": action_type,
-                "confidence": confidence,
-                "snapshot_path": snapshot_path,
-                "result": ResultType.SUCCESS,
-            }
-            # 如果 session 中有设备信息，写入 device_id
-            if session.get("device_id"):
-                record_data["device_id"] = session["device_id"]
-
-            record = AttendanceLog(**record_data)
-            db.add(record)
-            db.commit()
-
-            notification_service.attendance_recorded(user["name"], action_type.value)
-        finally:
-            db.close()
+        user = result["user"]
+        confidence = result["confidence"]
+        action_type = await _record_attendance(session, user, confidence, image)
 
         action_message = (
             "下班打卡成功" if action_type == ActionType.CHECK_OUT else "上班打卡成功"
         )
 
-        # 构建响应数据，包含设备名称
         result_data = {
             "success": True,
             "user": user,
@@ -199,21 +185,12 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
             "action_type": action_type.value,
             "message": f"{user['name']} {action_message}",
         }
-        # 如果有设备信息，添加到响应中
         if session.get("device_name"):
             result_data["device_name"] = session["device_name"]
 
-        await manager.send_json(
-            websocket,
-            {
-                "type": "result",
-                "data": result_data,
-            },
-        )
+        await manager.send_json(websocket, {"type": "result", "data": result_data})
 
-        session["frames"] = []
-        session["face_locations"] = []
-        session["face_keypoints"] = []
+        _clear_buffers(session)
         session["last_result_time"] = datetime.now().timestamp()
 
     except Exception as e:
@@ -222,7 +199,6 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
             websocket, {"type": "error", "data": {"message": str(e)}}
         )
     finally:
-        # 确保 processing 标志被重置
         session["processing"] = False
 
 
@@ -237,14 +213,20 @@ async def websocket_endpoint(websocket: WebSocket):
                 await asyncio.sleep(0.5)
                 continue
 
-            data = await websocket.receive_text()
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(), timeout=HEARTBEAT_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                log.info("ws_heartbeat_timeout", active=len(manager.active_connections))
+                await websocket.close(code=4000, reason="Heartbeat timeout")
+                break
+
             message = json.loads(data)
 
-            # 处理设备注册消息
             if message.get("type") == "register":
                 device_code = message.get("device_code")
                 if device_code:
-                    # 验证设备是否存在
                     db = SessionLocal()
                     try:
                         device = (
@@ -280,7 +262,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             await websocket.close()
                             return
 
-                        # 注册成功，将设备信息存入 session
                         session["device_id"] = device.id
                         session["device_code"] = device.device_code
                         session["device_name"] = device.name
@@ -311,10 +292,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 await process_frame(websocket, frame_data, session)
 
             elif message.get("type") == "ping":
+                session["last_ping"] = datetime.now().timestamp()
                 await manager.send_json(websocket, {"type": "pong"})
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        pass
     except Exception as e:
         log.error("websocket_error", error=str(e))
+    finally:
         manager.disconnect(websocket)
