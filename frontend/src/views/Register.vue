@@ -178,21 +178,22 @@ async function capturePhoto() {
     capturedFile.value = result.file
 
     try {
-      const detectResult = await faceApi.detectFace(result.file)
+      const detectResult = await faceApi.detectFace(result.file) as Record<string, any>
+      const detectData = detectResult.data || detectResult
 
-      if (detectResult.data.faces_detected === 0) {
+      if (detectData.faces_detected === 0) {
         ElMessage.warning('未检测到人脸，请重拍')
         retake()
         return
       }
 
-      if (detectResult.data.faces_detected > 1) {
+      if (detectData.faces_detected > 1) {
         ElMessage.warning('检测到多张人脸，请确保只有一人')
         retake()
         return
       }
 
-      faceQuality.value = detectResult.data.faces[0].quality
+      faceQuality.value = detectData.faces[0].quality
     } catch (error) {
       console.error('Face detection failed:', error)
       ElMessage.error('人脸检测失败，请重拍')
