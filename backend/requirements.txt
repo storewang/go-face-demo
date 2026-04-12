@@ -48,6 +48,9 @@ prometheus-client==0.19.0
 # Redis 缓存（性能优化 Phase 3）
 redis[hiredis]==5.0.4
 
+# FAISS 向量索引（可选，用户量 > 200 时生效）
+faiss-cpu>=1.7.4
+
 # ===== 集群扩展（Phase 5） =====
 psycopg2-binary==2.9.9
 minio==7.2.7

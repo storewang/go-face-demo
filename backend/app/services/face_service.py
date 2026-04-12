@@ -1,10 +1,3 @@
-"""
-人脸识别服务
-Phase 2 增强：Prometheus 指标埋点
-Phase 3 增强：Redis 缓存 + 后台线程加载
-Phase 6: InsightFace/ArcFace 替代 dlib + face_recognition
-"""
-
 import os
 import json
 import cv2
@@ -21,6 +14,7 @@ from app.config import settings
 from app.models import User
 from app.utils.face_utils import FaceUtils
 from app.cache import redis_client
+from app.services.storage_service import storage_service
 
 log = structlog.get_logger(__name__)
 
@@ -37,12 +31,21 @@ FACE_RECOG_DURATION = Histogram(
 KNOWN_FACES_GAUGE = Gauge("known_faces_count", "已注册人脸数量")
 CACHE_HIT = Counter("face_recognition_cache_hits_total", "识别缓存命中次数")
 
+try:
+    import faiss
+
+    HAS_FAISS = True
+except ImportError:
+    HAS_FAISS = False
+    log.warning("faiss not installed, using numpy vector search (fallback)")
+
 
 class FaceService:
     def __init__(self):
         self.known_encodings: List[np.ndarray] = []
         self.known_users: List[Dict] = []
         self.known_matrix: Optional[np.ndarray] = None
+        self._faiss_index = None
         self.threshold = settings.FACE_THRESHOLD
         self._ready = False
         self._face_app: Optional[FaceAnalysis] = None
@@ -54,7 +57,11 @@ class FaceService:
             self._init_insightface()
             self._load_known_faces()
             self._ready = True
-            log.info("face_service_ready", known_faces=len(self.known_encodings))
+            log.info(
+                "face_service_ready",
+                known_faces=len(self.known_encodings),
+                faiss=HAS_FAISS,
+            )
         except Exception as e:
             log.error("face_service_load_error", error=str(e))
             self._ready = False
@@ -75,8 +82,10 @@ class FaceService:
             )
 
             for user in users:
-                if os.path.exists(user.face_encoding_path):
-                    encoding = np.load(user.face_encoding_path)
+                encoding = self._load_encoding(
+                    user.employee_id, user.face_encoding_path
+                )
+                if encoding is not None:
                     self.known_encodings.append(encoding)
                     self.known_users.append(
                         {
@@ -89,7 +98,7 @@ class FaceService:
 
             log.info("known_faces_loaded", count=len(self.known_encodings))
             KNOWN_FACES_GAUGE.set(len(self.known_encodings))
-            self._rebuild_matrix()
+            self._rebuild_index()
             self._ready = True
         except Exception as e:
             log.error("failed_to_load_known_faces", error=str(e))
@@ -97,11 +106,52 @@ class FaceService:
         finally:
             db.close()
 
-    def _rebuild_matrix(self):
-        if self.known_encodings:
+    def _load_encoding(
+        self, employee_id: str, face_encoding_path: str
+    ) -> Optional[np.ndarray]:
+        encoding_bytes = storage_service.download(
+            settings.S3_ENCODING_BUCKET, f"{employee_id}.npy"
+        )
+        if encoding_bytes is not None:
+            return np.frombuffer(encoding_bytes, dtype=np.float32)
+        if os.path.exists(face_encoding_path):
+            return np.load(face_encoding_path)
+        return None
+
+    def _save_encoding(self, employee_id: str, encoding: np.ndarray):
+        encoding_bytes = encoding.astype(np.float32).tobytes()
+        storage_service.upload(
+            settings.S3_ENCODING_BUCKET,
+            f"{employee_id}.npy",
+            encoding_bytes,
+            "application/octet-stream",
+        )
+
+    def _save_face_image(self, employee_id: str, image: np.ndarray):
+        _, img_buf = cv2.imencode(".jpg", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        storage_service.upload(
+            settings.S3_FACE_BUCKET,
+            f"{employee_id}.jpg",
+            img_buf.tobytes(),
+            "image/jpeg",
+        )
+
+    def _rebuild_index(self):
+        if HAS_FAISS and len(self.known_encodings) > 0:
+            self._build_faiss_index()
+        elif self.known_encodings:
             self.known_matrix = np.stack(self.known_encodings)
         else:
             self.known_matrix = None
+
+    def _build_faiss_index(self):
+        encodings = np.array(self.known_encodings, dtype=np.float32)
+        dimension = encodings.shape[1] if len(encodings) > 0 else 512
+        self._faiss_index = faiss.IndexFlatIP(dimension)
+        faiss.normalize_L2(encodings)
+        self._faiss_index.add(encodings)
+        self.known_matrix = None
+        log.info("faiss_index_built", count=self._faiss_index.ntotal, dim=dimension)
 
     def reload_faces(self, db: Session):
         self.known_encodings = []
@@ -116,8 +166,8 @@ class FaceService:
         )
 
         for user in users:
-            if os.path.exists(user.face_encoding_path):
-                encoding = np.load(user.face_encoding_path)
+            encoding = self._load_encoding(user.employee_id, user.face_encoding_path)
+            if encoding is not None:
                 self.known_encodings.append(encoding)
                 self.known_users.append(
                     {
@@ -128,7 +178,7 @@ class FaceService:
                     }
                 )
         KNOWN_FACES_GAUGE.set(len(self.known_encodings))
-        self._rebuild_matrix()
+        self._rebuild_index()
 
     def _init_insightface(self):
         self._face_app = FaceAnalysis(
@@ -198,16 +248,17 @@ class FaceService:
         if not user:
             return {"success": False, "quality": None, "message": "用户不存在"}
 
-        encoding_filename = f"{user.employee_id}.npy"
-        encoding_path = settings.ENCODINGS_DIR / encoding_filename
-        np.save(encoding_path, face["encoding"])
+        self._save_encoding(user.employee_id, face["encoding"])
+        self._save_face_image(user.employee_id, image)
 
-        image_filename = f"{user.employee_id}.jpg"
-        image_path = settings.IMAGES_DIR / image_filename
-        cv2.imwrite(str(image_path), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        encoding_path = f"s3://{settings.S3_ENCODING_BUCKET}/{user.employee_id}.npy"
+        image_path = f"s3://{settings.S3_FACE_BUCKET}/{user.employee_id}.jpg"
+        if not storage_service.available:
+            encoding_path = str(settings.ENCODINGS_DIR / f"{user.employee_id}.npy")
+            image_path = str(settings.IMAGES_DIR / f"{user.employee_id}.jpg")
 
-        user.face_encoding_path = str(encoding_path)
-        user.face_image_path = str(image_path)
+        user.face_encoding_path = encoding_path
+        user.face_image_path = image_path
         db.commit()
 
         self.reload_faces(db)
@@ -216,6 +267,23 @@ class FaceService:
         return {"success": True, "quality": face["quality"], "message": "人脸注册成功"}
 
     def recognize_face(self, encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
+        if HAS_FAISS and self._faiss_index is not None and self._faiss_index.ntotal > 0:
+            return self._recognize_faiss(encoding)
+        return self._recognize_numpy(encoding)
+
+    def _recognize_faiss(self, encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
+        query = np.array([encoding], dtype=np.float32)
+        faiss.normalize_L2(query)
+        similarities, indices = self._faiss_index.search(query, 1)
+
+        confidence = float(similarities[0][0])
+        idx = int(indices[0][0])
+
+        if confidence >= self.threshold and idx >= 0:
+            return self.known_users[idx], float(confidence)
+        return None, float(confidence)
+
+    def _recognize_numpy(self, encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
         if self.known_matrix is None or len(self.known_encodings) == 0:
             return None, 0.0
 
