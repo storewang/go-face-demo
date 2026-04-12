@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from typing import Optional, List
+import numpy as np
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -121,6 +122,9 @@ def verify_face(
 
             frame_list = [first_img]
             face_locations = [face["box"]]
+            face_keypoints = [
+                np.array(face["keypoints"]) if face.get("keypoints") else None
+            ]
 
             for img_file in images[1:]:
                 img_bytes = img_file.file.read()
@@ -130,10 +134,15 @@ def verify_face(
                 frame_faces = face_service.detect_faces(img)
                 if frame_faces:
                     face_locations.append(frame_faces[0]["box"])
+                    kps = frame_faces[0].get("keypoints")
+                    face_keypoints.append(np.array(kps) if kps else None)
                 else:
                     face_locations.append(face_locations[-1])
+                    face_keypoints.append(face_keypoints[-1])
 
-            liveness_result = liveness.check_liveness(frame_list, face_locations)
+            liveness_result = liveness.check_liveness(
+                frame_list, face_locations, face_keypoints
+            )
             liveness_passed = liveness_result["passed"]
 
             if not liveness_passed:
@@ -167,7 +176,9 @@ def verify_face(
     )
 
 
-@router.post("/register/{user_id}", response_model=FaceRegisterResponse, summary="注册人脸")
+@router.post(
+    "/register/{user_id}", response_model=FaceRegisterResponse, summary="注册人脸"
+)
 @limiter.limit("10/minute")
 async def register_face(
     request: Request,
@@ -180,9 +191,9 @@ async def register_face(
         raise HTTPException(status_code=404, detail="用户不存在")
 
     image_bytes = image.file.read()
-    
+
     safe_filename = sanitize_filename(image.filename)
-    
+
     error_msg = validate_image(image_bytes, safe_filename)
     if error_msg:
         raise HTTPException(status_code=400, detail=error_msg)
@@ -205,8 +216,6 @@ def compare_faces(
     image1: UploadFile = File(..., description="第一张人脸"),
     image2: UploadFile = File(..., description="第二张人脸"),
 ):
-    import face_recognition
-
     img1_bytes = image1.file.read()
     img1 = FaceUtils.load_image_from_bytes(img1_bytes)
 
@@ -227,14 +236,14 @@ def compare_faces(
     encoding1 = faces1[0]["encoding"]
     encoding2 = faces2[0]["encoding"]
 
-    distance = face_recognition.face_distance([encoding1], encoding2)[0]
-    confidence = 1 - distance
+    similarity = float(np.dot(encoding1, encoding2))
+    confidence = similarity
 
     match = confidence >= face_service.threshold
 
     return {
         "match": bool(match),
-        "distance": float(distance),
+        "distance": float(1.0 - similarity),
         "confidence": float(confidence),
         "message": "匹配成功" if match else "不匹配",
     }

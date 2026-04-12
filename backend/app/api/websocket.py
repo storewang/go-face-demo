@@ -26,7 +26,7 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
     # Phase 3 性能优化：跳帧逻辑（如果上一帧还在处理，丢弃当前帧）
     if session.get("processing", False):
         return
-    
+
     session["processing"] = True
     try:
         # === 原有处理逻辑 ===
@@ -75,6 +75,8 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
 
         session["frames"].append(image)
         session["face_locations"].append(face["box"])
+        kps = face.get("keypoints")
+        session["face_keypoints"].append(np.array(kps) if kps else None)
 
         if len(session["frames"]) < FRAME_BUFFER_SIZE:
             await manager.send_json(
@@ -93,7 +95,7 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
         try:
             liveness = get_liveness_service()
             liveness_result = liveness.check_liveness(
-                session["frames"], session["face_locations"]
+                session["frames"], session["face_locations"], session["face_keypoints"]
             )
 
             if not liveness_result["passed"]:
@@ -109,6 +111,7 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
                 )
                 session["frames"] = []
                 session["face_locations"] = []
+                session["face_keypoints"] = []
                 return
         except Exception:
             liveness_passed = False
@@ -131,6 +134,7 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
             )
             session["frames"] = []
             session["face_locations"] = []
+            session["face_keypoints"] = []
             return
 
         db = SessionLocal()
@@ -173,11 +177,11 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
             # 如果 session 中有设备信息，写入 device_id
             if session.get("device_id"):
                 record_data["device_id"] = session["device_id"]
-            
+
             record = AttendanceLog(**record_data)
             db.add(record)
             db.commit()
-            
+
             notification_service.attendance_recorded(user["name"], action_type.value)
         finally:
             db.close()
@@ -209,6 +213,7 @@ async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
 
         session["frames"] = []
         session["face_locations"] = []
+        session["face_keypoints"] = []
         session["last_result_time"] = datetime.now().timestamp()
 
     except Exception as e:
@@ -242,38 +247,61 @@ async def websocket_endpoint(websocket: WebSocket):
                     # 验证设备是否存在
                     db = SessionLocal()
                     try:
-                        device = db.query(Device).filter(Device.device_code == device_code).first()
+                        device = (
+                            db.query(Device)
+                            .filter(Device.device_code == device_code)
+                            .first()
+                        )
                         if not device:
-                            await manager.send_json(websocket, {
-                                "type": "error",
-                                "data": {"message": "设备不存在", "code": "DEVICE_NOT_FOUND"}
-                            })
+                            await manager.send_json(
+                                websocket,
+                                {
+                                    "type": "error",
+                                    "data": {
+                                        "message": "设备不存在",
+                                        "code": "DEVICE_NOT_FOUND",
+                                    },
+                                },
+                            )
                             await websocket.close()
                             return
-                        
+
                         if device.status == 2:
-                            await manager.send_json(websocket, {
-                                "type": "error",
-                                "data": {"message": "设备已禁用", "code": "DEVICE_DISABLED"}
-                            })
+                            await manager.send_json(
+                                websocket,
+                                {
+                                    "type": "error",
+                                    "data": {
+                                        "message": "设备已禁用",
+                                        "code": "DEVICE_DISABLED",
+                                    },
+                                },
+                            )
                             await websocket.close()
                             return
-                        
+
                         # 注册成功，将设备信息存入 session
                         session["device_id"] = device.id
                         session["device_code"] = device.device_code
                         session["device_name"] = device.name
-                        
-                        log.info("device_registered", device_code=device_code, device_name=device.name)
-                        
-                        await manager.send_json(websocket, {
-                            "type": "registered",
-                            "data": {
-                                "device_id": device.id,
-                                "device_code": device.device_code,
-                                "device_name": device.name
-                            }
-                        })
+
+                        log.info(
+                            "device_registered",
+                            device_code=device_code,
+                            device_name=device.name,
+                        )
+
+                        await manager.send_json(
+                            websocket,
+                            {
+                                "type": "registered",
+                                "data": {
+                                    "device_id": device.id,
+                                    "device_code": device.device_code,
+                                    "device_name": device.name,
+                                },
+                            },
+                        )
                     finally:
                         db.close()
                 continue

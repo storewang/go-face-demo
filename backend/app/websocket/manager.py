@@ -13,8 +13,8 @@ class ConnectionManager:
         self.session_data[websocket] = {
             "frames": [],
             "face_locations": [],
+            "face_keypoints": [],
             "last_result_time": 0,
-            # 设备绑定字段
             "device_id": None,
             "device_code": None,
             "device_name": None,

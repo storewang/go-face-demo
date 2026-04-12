@@ -14,12 +14,15 @@ class Settings(BaseSettings):
     FACE_THRESHOLD: float = 0.6
     LIVENESS_FRAMES: int = 5
 
+    # InsightFace / ArcFace 模型配置
+    FACE_MODEL_NAME: str = "buffalo_l"  # InsightFace 模型包名
+    FACE_DET_SIZE: int = 640  # 检测输入分辨率
+    FACE_PROVIDER: str = "CPUExecutionProvider"  # onnxruntime 推理后端
+
     DATA_DIR: Path = Path("./data")
     FACES_DIR: Path = DATA_DIR / "faces"
     IMAGES_DIR: Path = FACES_DIR / "images"
     ENCODINGS_DIR: Path = FACES_DIR / "encodings"
-
-    LIVENESS_MODEL_PATH: Path = Path("models/shape_predictor_68_face_landmarks.dat")
 
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
@@ -34,7 +37,9 @@ class Settings(BaseSettings):
         if db_url:
             values["DATABASE_URL"] = db_url
         elif values.get("DB_PASSWORD"):
-            values["DATABASE_URL"] = f"postgresql+psycopg2://{values['DB_USER']}:{values['DB_PASSWORD']}@{values['DB_HOST']}:{values['DB_PORT']}/{values['DB_NAME']}"
+            values["DATABASE_URL"] = (
+                f"postgresql+psycopg2://{values['DB_USER']}:{values['DB_PASSWORD']}@{values['DB_HOST']}:{values['DB_PORT']}/{values['DB_NAME']}"
+            )
         return values
 
     # ===== Redis 缓存配置（Phase 3 性能优化） =====
@@ -42,9 +47,9 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     # 缓存 TTL（秒）
-    CACHE_USER_TTL: int = 600        # 用户信息缓存 10 分钟
-    CACHE_RECOG_TTL: int = 3         # 同一用户识别结果缓存 3 秒
-    CACHE_STATS_TTL: int = 300       # 统计数据缓存 5 分钟
+    CACHE_USER_TTL: int = 600  # 用户信息缓存 10 分钟
+    CACHE_RECOG_TTL: int = 3  # 同一用户识别结果缓存 3 秒
+    CACHE_STATS_TTL: int = 300  # 统计数据缓存 5 分钟
 
     # ===== MinIO 对象存储配置（Phase 5 集群扩展） =====
     S3_ENDPOINT: str = "localhost:9000"
@@ -66,10 +71,7 @@ class Settings(BaseSettings):
     JWT_EXPIRE_HOURS: int = 8
 
     # CORS配置
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:5173",
-        "http://localhost:80"
-    ]
+    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:80"]
 
     @field_validator("JWT_SECRET_KEY", mode="before")
     @classmethod
@@ -86,7 +88,9 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             # 按逗号分隔并去除空白
             origins = [origin.strip() for origin in v.split(",") if origin.strip()]
-            return origins if origins else ["http://localhost:5173", "http://localhost:80"]
+            return (
+                origins if origins else ["http://localhost:5173", "http://localhost:80"]
+            )
         return v
 
     class Config:

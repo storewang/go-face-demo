@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-import face_recognition
 from typing import Tuple
 
 
@@ -13,7 +12,10 @@ class FaceUtils:
 
     @staticmethod
     def load_image_from_file(file_path: str) -> np.ndarray:
-        return face_recognition.load_image_file(file_path)
+        image = cv2.imread(file_path)
+        if image is None:
+            raise ValueError(f"无法读取图像: {file_path}")
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     @staticmethod
     def get_face_quality(image: np.ndarray, location: Tuple) -> str:
