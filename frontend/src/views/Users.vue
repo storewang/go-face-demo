@@ -223,7 +223,7 @@ async function fetchUsers() {
     users.value = items.map((u: Record<string, any>) => ({
       ...u,
       employee_id: u.employee_id || u.employeeId,
-      face_encoding_path: u.face_encoding_path ?? u.hasFaceEncoding,
+      face_encoding_path: u.face_encoding_path ?? u.face_image_path ?? u.hasFaceEncoding ?? u.has_face_encoding,
       created_at: u.created_at || u.createdAt,
       updated_at: u.updated_at || u.updatedAt,
       department: u.department,
@@ -402,12 +402,15 @@ async function confirmRegister() {
   try {
     const result = await faceApi.registerFace(currentUser.value.id, capturedFile.value)
 
-    if (result.success) {
+    // Compatible with both wrapped {code,data:{success}} and unwrapped {success} responses
+    const regData = result.data || result
+
+    if (regData.success) {
       ElMessage.success('人脸录入成功')
       faceDialogVisible.value = false
       await fetchUsers()
     } else {
-      ElMessage.warning(result.message || '人脸录入失败')
+      ElMessage.warning(regData.message || '人脸录入失败')
     }
   } catch (error) {
     console.error('Face register failed:', error)

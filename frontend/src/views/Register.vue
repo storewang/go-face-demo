@@ -235,7 +235,7 @@ async function handleSubmit() {
       face_image: capturedFile.value
     }) as Record<string, unknown>
 
-    if (result.data.hasFaceEncoding || result.hasFaceEncoding) {
+    if (result.data?.has_face_encoding || result.data?.hasFaceEncoding || (result as any).has_face_encoding || (result as any).hasFaceEncoding) {
       ElMessage.success('注册成功，人脸已录入')
     } else {
       ElMessage.success('用户创建成功，但人脸未成功录入，请稍后在用户管理中补充')
