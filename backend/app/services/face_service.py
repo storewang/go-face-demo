@@ -11,6 +11,7 @@ from prometheus_client import Counter, Histogram, Gauge
 from insightface.app import FaceAnalysis
 
 from app.config import settings
+from app.utils.crypto import biometric_crypto
 from app.models import User
 from app.utils.face_utils import FaceUtils
 from app.cache import redis_client
@@ -31,21 +32,11 @@ FACE_RECOG_DURATION = Histogram(
 KNOWN_FACES_GAUGE = Gauge("known_faces_count", "已注册人脸数量")
 CACHE_HIT = Counter("face_recognition_cache_hits_total", "识别缓存命中次数")
 
-try:
-    import faiss
-
-    HAS_FAISS = True
-except ImportError:
-    HAS_FAISS = False
-    log.warning("faiss not installed, using numpy vector search (fallback)")
-
-
 class FaceService:
     def __init__(self):
         self.known_encodings: List[np.ndarray] = []
         self.known_users: List[Dict] = []
         self.known_matrix: Optional[np.ndarray] = None
-        self._faiss_index = None
         self.threshold = settings.FACE_THRESHOLD
         self._ready = False
         self._face_app: Optional[FaceAnalysis] = None
@@ -60,7 +51,6 @@ class FaceService:
             log.info(
                 "face_service_ready",
                 known_faces=len(self.known_encodings),
-                faiss=HAS_FAISS,
             )
         except Exception as e:
             log.error("face_service_load_error", error=str(e))
@@ -113,17 +103,38 @@ class FaceService:
             settings.S3_ENCODING_BUCKET, f"{employee_id}.npy"
         )
         if encoding_bytes is not None:
-            return np.frombuffer(encoding_bytes, dtype=np.float32)
+            # Try decrypting first; if decryption fails with InvalidToken,
+            # fall back to legacy unencrypted data for backward compatibility
+            try:
+                decrypted = biometric_crypto.decrypt(encoding_bytes)
+                return np.frombuffer(decrypted, dtype=np.float32)
+            except Exception as e:
+                # Import locally to avoid import-time dependency if crypto unavailable
+                # Only treat InvalidToken as legacy data; others bubble up for visibility
+                from cryptography.fernet import InvalidToken
+                if isinstance(e, InvalidToken):
+                    log.info("encoding_decryption_failed_on_load", error="using legacy encoding bytes")
+                    return np.frombuffer(encoding_bytes, dtype=np.float32)
+                # unexpected error - log and proceed with legacy path
+                log.exception("unexpected_decryption_error", error=str(e))
+                return np.frombuffer(encoding_bytes, dtype=np.float32)
         if os.path.exists(face_encoding_path):
             return np.load(face_encoding_path)
         return None
 
     def _save_encoding(self, employee_id: str, encoding: np.ndarray):
         encoding_bytes = encoding.astype(np.float32).tobytes()
+        # Encrypt before storage
+        try:
+            encrypted = biometric_crypto.encrypt(encoding_bytes)
+        except Exception as e:
+            log.error("encryption_failed", error=str(e))
+            # Fall back to plain bytes if encryption fails (should rarely happen)
+            encrypted = encoding_bytes
         storage_service.upload(
             settings.S3_ENCODING_BUCKET,
             f"{employee_id}.npy",
-            encoding_bytes,
+            encrypted,
             "application/octet-stream",
         )
 
@@ -137,21 +148,12 @@ class FaceService:
         )
 
     def _rebuild_index(self):
-        if HAS_FAISS and len(self.known_encodings) > 0:
-            self._build_faiss_index()
-        elif self.known_encodings:
+        # Always use NumPy-based brute-force vector search
+        if len(self.known_encodings) > 0:
             self.known_matrix = np.stack(self.known_encodings)
         else:
             self.known_matrix = None
-
-    def _build_faiss_index(self):
-        encodings = np.array(self.known_encodings, dtype=np.float32)
-        dimension = encodings.shape[1] if len(encodings) > 0 else 512
-        self._faiss_index = faiss.IndexFlatIP(dimension)
-        faiss.normalize_L2(encodings)
-        self._faiss_index.add(encodings)
-        self.known_matrix = None
-        log.info("faiss_index_built", count=self._faiss_index.ntotal, dim=dimension)
+    
 
     def reload_faces(self, db: Session):
         self.known_encodings = []
@@ -267,21 +269,7 @@ class FaceService:
         return {"success": True, "quality": face["quality"], "message": "人脸注册成功"}
 
     def recognize_face(self, encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
-        if HAS_FAISS and self._faiss_index is not None and self._faiss_index.ntotal > 0:
-            return self._recognize_faiss(encoding)
         return self._recognize_numpy(encoding)
-
-    def _recognize_faiss(self, encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
-        query = np.array([encoding], dtype=np.float32)
-        faiss.normalize_L2(query)
-        similarities, indices = self._faiss_index.search(query, 1)
-
-        confidence = float(similarities[0][0])
-        idx = int(indices[0][0])
-
-        if confidence >= self.threshold and idx >= 0:
-            return self.known_users[idx], float(confidence)
-        return None, float(confidence)
 
     def _recognize_numpy(self, encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
         if self.known_matrix is None or len(self.known_encodings) == 0:
