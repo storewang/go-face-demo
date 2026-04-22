@@ -1,10 +1,11 @@
 """
 健康检查路由
 """
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, Depends
 from datetime import datetime
 from sqlalchemy import text
 from app.config import settings
+from app.utils.auth import get_current_user
 
 router = APIRouter(tags=["健康检查"])
 
@@ -78,3 +79,17 @@ async def readiness_check():
 async def liveness_check():
     """K8s livenessProbe"""
     return {"alive": True}
+
+
+@router.post("/api/cleanup")
+async def trigger_cleanup(current_user: dict = Depends(get_current_user)):
+    """手动触发数据清理（需管理员权限）"""
+    from app.services.cleanup_service import cleanup_service
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        results = cleanup_service.run_all(db)
+        return {"code": 200, "data": results, "message": "数据清理完成"}
+    finally:
+        db.close()
