@@ -47,6 +47,8 @@
           </el-card>
         </el-col>
       </el-row>
+      <!-- 实时更新指示器 -->
+      <el-tag v-if="lastEvent" size="small" type="success" style="margin-left: 12px">实时更新中</el-tag>
 
       <el-row :gutter="20" class="quick-cards-section">
         <el-col :xs="12" :sm="6" v-for="item in quickCards" :key="item.path">
@@ -88,12 +90,16 @@ import { useRouter } from 'vue-router'
 import { UserFilled, Camera, Document, User } from '@element-plus/icons-vue'
 import type { DailyStats } from '@/types/statistics'
 import { getDailyStats } from '@/api/statistics'
+import { onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const isMobile = computed(() => window.innerWidth <= 768)
 
 const dailyStats = ref<DailyStats | null>(null)
 const loading = ref(false)
+// Real-time events via SSE
+let eventSource: EventSource | null = null
+const lastEvent = ref<Record<string, unknown> | null>(null)
 
 const quickCards = [
   { path: '/register', title: '用户注册', description: '录入新用户和人脸', icon: UserFilled, color: '#409EFF' },
@@ -117,7 +123,73 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  // Connect to SSE stream for real-time updates
+  connectSSE()
 })
+
+// Cleanup on unmount
+onBeforeUnmount(() => {
+  disconnectSSE()
+})
+
+function connectSSE() {
+  try {
+    const proto = window.location.protocol === 'https:' ? 'https:' : 'http:'
+    const sseUrl = `${proto}//${window.location.host}/api/events/stream`
+    eventSource = new EventSource(sseUrl)
+
+    eventSource.addEventListener('face_recognized', (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(ev.data)
+        lastEvent.value = { type: 'face_recognized', ...data }
+        refreshStats()
+      } catch (err) {
+        console.error('解析人脸识别事件失败:', err)
+      }
+    })
+
+    eventSource.addEventListener('attendance_recorded', (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(ev.data)
+        lastEvent.value = { type: 'attendance_recorded', ...data }
+        refreshStats()
+      } catch (err) {
+        console.error('解析考勤事件失败:', err)
+      }
+    })
+
+    eventSource.addEventListener('system_alert', (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(ev.data)
+        lastEvent.value = { type: 'system_alert', ...data }
+      } catch (err) {
+        console.error('解析系统事件失败:', err)
+      }
+    })
+
+    eventSource.onerror = () => {
+      console.warn('SSE 连接已关闭，后台将尝试重连')
+    }
+  } catch (err) {
+    console.error('Failed to connect SSE:', err)
+  }
+}
+
+function disconnectSSE() {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+}
+
+async function refreshStats() {
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    dailyStats.value = await getDailyStats(today)
+  } catch (e) {
+    console.error('刷新统计失败', e)
+  }
+}
 </script>
 
 <style scoped>
@@ -188,13 +260,23 @@ onMounted(async () => {
 }
 
 /* Mobile responsive */
+@media (max-width: 1024px) {
+  .quick-cards-section .el-col {
+    margin-bottom: 12px;
+  }
+}
+
 @media (max-width: 768px) {
   .dashboard {
     padding: 12px 8px;
   }
 
+  .stats-grid .el-col {
+    margin-bottom: 12px;
+  }
+
   .stat-card {
-    padding: 16px 12px;
+    padding: 12px 8px;
   }
 
   .stat-card :deep(.el-statistic__content) {
@@ -205,12 +287,17 @@ onMounted(async () => {
     font-size: 20px !important;
   }
 
+  .quick-cards-section .el-col {
+    margin-bottom: 8px;
+  }
+
   .quick-content h3 {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .quick-content p {
     font-size: 11px;
+    margin: 0;
   }
 
   .personal-status {

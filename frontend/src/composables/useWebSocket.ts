@@ -60,6 +60,8 @@ export function useWebSocket(options: WebSocketOptions = {}) {
 
       try {
         ws.value = new WebSocket(url)
+        // Enable binary frame support for incoming/outgoing binary messages
+        ws.value.binaryType = 'arraybuffer'
 
         ws.value.onopen = () => {
           isConnected.value = true
@@ -150,6 +152,18 @@ export function useWebSocket(options: WebSocketOptions = {}) {
     }
   }
 
+  // Send binary data (Blob or ArrayBuffer)
+  function sendBinary(data: Blob | ArrayBuffer): boolean {
+    if (!ws.value || ws.value.readyState !== WebSocket.OPEN) return false
+    try {
+      ws.value.send(data)
+      return true
+    } catch (error) {
+      console.error('[WebSocket] Failed to send binary:', error)
+      return false
+    }
+  }
+
   function scheduleReconnect() {
     if (reconnectTimer) return
 
@@ -221,6 +235,7 @@ export function useWebSocket(options: WebSocketOptions = {}) {
     onOpen,
     onClose,
     onError,
-    onRegistered
+    onRegistered,
+    sendBinary
   }
 }

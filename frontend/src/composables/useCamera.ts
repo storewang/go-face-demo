@@ -42,6 +42,23 @@ export function useCamera() {
     return canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
   }
 
+  // New binary capture: returns a Blob containing JPEG data
+  function captureFrameBlob(video: HTMLVideoElement, quality: number = 0.8): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(null); return }
+      ctx.drawImage(video, 0, 0)
+      canvas.toBlob(
+        (blob) => resolve(blob),
+        'image/jpeg',
+        quality
+      )
+    })
+  }
+
   onBeforeUnmount(() => {
     stop()
   })
@@ -52,6 +69,7 @@ export function useCamera() {
     error,
     start,
     stop,
-    captureFrame
+    captureFrame,
+    captureFrameBlob
   }
 }
