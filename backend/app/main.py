@@ -55,7 +55,7 @@ def create_app() -> FastAPI:
         | dept_admin | 部门管理 + 设备管理 |
         | employee | 个人考勤查看 + 人脸注册 |
         """,
-        version="2.1.0",
+        version="3.0.0",
         debug=settings.DEBUG,
     )
 
@@ -103,4 +103,4 @@ async def ws_face_stream(websocket: WebSocket):
 
 @app.get("/")
 def root():
-    return {"message": "Face Scan API", "version": "2.1.0"}
+    return {"message": "Face Scan API", "version": "3.0.0"}

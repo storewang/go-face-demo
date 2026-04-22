@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run backend tests
+        env:
+          JWT_SECRET_KEY: ci-test-secret-key-1234567890
+          ADMIN_PASSWORD: ci_admin_123
+          DATABASE_URL: sqlite:///./ci_test.db
+          CORS_ORIGINS: '["http://localhost"]'
+          DEBUG: 'true'
+          REDIS_HOST: localhost
+          REDIS_PORT: '63790'
+          S3_ENDPOINT: localhost:9000
+          S3_ACCESS_KEY: ''
+          S3_SECRET_KEY: ''
+        run: |
+          cd backend
+          pytest -v --tb=short --cov=app --cov-report=term-missing
+        continue-on-error: false
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Type check
+        run: |
+          cd frontend
+          npx vue-tsc --noEmit
+        continue-on-error: true
+
+      - name: Run unit tests
+        run: |
+          cd frontend
+          npx vitest run --reporter=verbose
+        env:
+          CI: true
+
+      - name: Build production bundle
+        run: |
+          cd frontend
+          npm run build

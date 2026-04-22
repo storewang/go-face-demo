@@ -10,6 +10,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 预下载 InsightFace 模型 (约 300MB，避免运行时下载)
+ENV INSIGHTFACE_HOME=/app/.insightface
+RUN python -c "\
+from insightface.app import FaceAnalysis; \
+app = FaceAnalysis(name='buffalo_l', root='/app'); \
+app.prepare(ctx_id=-1, det_size=640); \
+print('Model pre-downloaded successfully')"
+
 COPY . .
 
 RUN mkdir -p data/faces/images/snapshots data/faces/encodings models
