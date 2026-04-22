@@ -3,6 +3,15 @@
     <div class="header">
       <h2>人脸识别门禁</h2>
       <el-tag :type="connectionStatus" size="small">{{ connectionText }}</el-tag>
+      <el-alert
+        v-if="!isOnline"
+        title="网络断开"
+        description="请使用 PIN 码开门"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-top: 10px"
+      />
     </div>
 
     <div class="main-content">
@@ -75,6 +84,16 @@
             >
               <el-icon><VideoPause /></el-icon>
               {{ isMobile ? '停止' : '停止识别' }}
+            </el-button>
+
+            <el-button
+              v-if="!isOnline || !!cameraError"
+              type="warning"
+              size="large"
+              @click="showPinFallback = true"
+            >
+              <el-icon><Key /></el-icon>
+              PIN 码开门
             </el-button>
           </div>
         </div>
@@ -171,6 +190,21 @@
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="showPinFallback" title="PIN 码开门" width="320px" :close-on-click-modal="false">
+      <el-input
+        v-model="pinCode"
+        placeholder="请输入 6 位 PIN 码"
+        maxlength="6"
+        type="password"
+        size="large"
+        @keyup.enter="submitPin"
+      />
+      <template #footer>
+        <el-button @click="showPinFallback = false">取消</el-button>
+        <el-button type="primary" @click="submitPin" :loading="pinLoading">确认</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -183,12 +217,16 @@ import {
   UserFilled,
   CircleCheckFilled,
   WarningFilled,
-  Loading
+  Loading,
+  Key
 } from '@element-plus/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useCamera } from '@/composables/useCamera'
+import { useOnlineStatus } from '@/composables/useOnlineStatus'
 import * as deviceApi from '@/api/device'
 import type { Device } from '@/types/device'
 import { useAuthStore } from '@/stores/auth'
+import { post } from '@/utils/request'
 
 const isMobile = computed(() => window.innerWidth <= 768)
 
@@ -203,6 +241,13 @@ const lastResult = ref<Record<string, unknown> | null>(null)
 const showDoorOpen = ref(false)
 const scanHistory = ref<Array<Record<string, unknown>>>([])
 
+// 网络状态与 PIN 码回退
+const { isOnline } = useOnlineStatus()
+const cameraError = ref('')
+const showPinFallback = ref(false)
+const pinCode = ref('')
+const pinLoading = ref(false)
+
 // 设备相关
 const devices = ref<Device[]>([])
 const selectedDeviceCode = ref<string>('')
@@ -213,9 +258,13 @@ const {
   connect,
   disconnect,
   send,
+  sendBinary,
   onMessage,
   onRegistered
 } = useWebSocket()
+
+// Camera utilities for binary capture
+const { captureFrameBlob } = useCamera()
 
 let stream: MediaStream | null = null
 let frameInterval: number | null = null
@@ -297,6 +346,7 @@ async function startScanning() {
     ElMessage.success('识别已启动')
   } catch (error: unknown) {
     const err = error as Error
+    cameraError.value = err.message
     ElMessage.error('启动失败: ' + err.message)
     statusMessage.value = '启动失败'
   } finally {
@@ -328,30 +378,16 @@ function stopScanning() {
 function startFrameSending() {
   frameInterval = window.setInterval(() => {
     if (!videoRef.value || !isConnected.value) return
-
-    const frame = captureFrame()
-    if (frame) {
-      send({
-        type: 'frame',
-        data: frame
+    // Capture a binary frame (Blob) and send as binary frame
+    captureFrameBlob(videoRef.value!, 0.75)
+      .then((blob) => {
+        if (blob && sendBinary) {
+          sendBinary(blob)
+        }
       })
-    }
   }, 400)
 }
-
-function captureFrame(): string | null {
-  if (!videoRef.value) return null
-
-  const canvas = document.createElement('canvas')
-  canvas.width = isMobile.value ? 320 : 480
-  canvas.height = isMobile.value ? 240 : 360
-
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-
-  ctx.drawImage(videoRef.value, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.75).split(',')[1]
-}
+// Removed legacy captureFrame, keep binary path (captureFrameBlob provided by useCamera)
 
 function handleWebSocketMessage(data: Record<string, unknown>) {
   if (data.type === 'status') {
@@ -400,6 +436,29 @@ function handleWebSocketMessage(data: Record<string, unknown>) {
     const regData = (data.data || data) as Record<string, string>
     currentDeviceName.value = regData.device_name || ''
     ElMessage.success(`已连接到设备: ${regData.device_name || ''}`)
+  }
+}
+
+async function submitPin() {
+  if (!pinCode.value || pinCode.value.length !== 6) {
+    ElMessage.warning('请输入 6 位 PIN 码')
+    return
+  }
+  pinLoading.value = true
+  try {
+    const res = await post<Record<string, unknown>>('/auth/pin-verify', { pin_code: pinCode.value })
+    if (res.code === 200 || res.data) {
+      ElMessage.success('PIN 验证成功，门已开启')
+      showPinFallback.value = false
+      pinCode.value = ''
+    } else {
+      ElMessage.error(res.message || 'PIN 码错误')
+    }
+  } catch (e: unknown) {
+    const err = e as Error
+    ElMessage.error(err?.message || 'PIN 验证失败')
+  } finally {
+    pinLoading.value = false
   }
 }
 
