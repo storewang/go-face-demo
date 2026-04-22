@@ -1,5 +1,9 @@
 # go-face-demo 部署构建文档
 
+> **推荐部署**: Docker Compose 单机模式 (`docker-compose.deploy.yml`)
+> 集群部署方案见 `deploy/cluster/` 目录
+> 开发环境使用 `docker-compose.dev.yml` (支持代码热重载)
+
 > 人脸识别考勤系统 — Docker Compose 部署指南
 > 版本：v2.1.0 | 最后更新：2026-04-10
 
@@ -12,7 +16,7 @@
 3. [项目结构](#3-项目结构)
 4. [部署步骤](#4-部署步骤)
 5. [配置说明](#5-配置说明)
-6. [构建优化（dlib 编译）](#6-构建优化dlib-编译)
+6. [构建优化（模型下载）](#6-构建优化模型下载)
 7. [运维管理](#7-运维管理)
 8. [扩展部署（HTTPS/Redis/PostgreSQL）](#8-扩展部署httpsredispostgresql)
 9. [故障排除](#9-故障排除)
@@ -28,9 +32,9 @@
 │  ┌──────────────┐     ┌──────────────────────┐  │
 │  │   Frontend   │     │      Backend         │  │
 │  │  (Nginx:80)  │────▶│  (FastAPI:8000)      │  │
-│  │  Vue 3 + TS  │ API │  face_recognition     │  │
-│  │  Element Plus│ WS  │  dlib + OpenCV        │  │
-│  └──────────────┘     │  SQLite / PostgreSQL  │  │
+│  │  Vue 3 + TS  │ API │  InsightFace/ArcFace  │  │
+│  │  Element Plus│ WS  │  OpenCV               │  │
+│  │  └──────────────┘     │  SQLite / PostgreSQL  │  │
 │                        │  Redis (可选)         │  │
 │                        └──────────────────────┘  │
 │                               │                   │
@@ -50,11 +54,12 @@
 | 前端 | Vue 3 + TypeScript + Element Plus | - |
 | 构建工具 | Vite 5 | - |
 | 后端 | FastAPI + Uvicorn | 0.109.2 / 0.27.1 |
-| 人脸识别 | face_recognition + dlib | 1.3.0 / 19.22.1 |
+| 人脸识别 | InsightFace/ArcFace + OpenCV | - |
 | 图像处理 | OpenCV (headless) | 4.8.1 |
 | 数据库 | SQLite（默认）/ PostgreSQL（可选） | - |
 | 缓存 | Redis（可选，降级为无缓存） | 5.0.4 |
 | 容器 | Docker + Docker Compose | - |
+
 
 ---
 
@@ -65,12 +70,11 @@
 | 项目 | 最低 | 推荐 |
 |------|------|------|
 | CPU | 2 核 | 4 核+ |
-| **内存** | **4GB** | **8GB+**（dlib 编译需 2-6GB） |
+| **内存** | **4GB** | **8GB+** |
 | 磁盘 | 10GB | 20GB+（人脸图片+模型文件） |
 | 网络 | 内网可通 | 公网可访问（可选 HTTPS） |
 
-> ⚠️ **dlib 编译是内存大户**：单线程编译峰值约 2-3GB，多线程可达 5-6GB。
-> 构建时确保系统可用内存 ≥ 4GB，否则会被 OOM Killer 终止。
+> ⚠️ **模型加载**：首次启动时会加载 InsightFace 模型，建议确保系统可用内存 ≥ 4GB。
 
 ### 软件要求
 
@@ -95,10 +99,16 @@
 
 ```
 go-face-demo/
-├── docker-compose.deploy.yml   # 部署用的 Compose 文件
+├── docker-compose.yml          # 基础 Compose 文件
+├── docker-compose.deploy.yml   # 生产部署 Compose 文件
+├── docker-compose.dev.yml      # 开发热重载 Compose 文件
+├── deploy/
+│   └── cluster/                # 集群部署配置 (K8s/Swarm)
+│       ├── docker-compose.cluster.yml
+│       └── k8s/
 ├── backend/
 │   ├── Dockerfile              # 后端镜像构建
-│   ├── Dockerfile.test         # 测试镜像构建（跳过 dlib）
+│   ├── Dockerfile.test         # 测试镜像构建
 │   ├── requirements.txt        # Python 依赖
 │   ├── .env                    # 环境变量配置 ⚠️ 不要提交到 Git
 │   ├── tests/
@@ -285,19 +295,27 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8080
 
 ---
 
-## 6. 构建优化（dlib 编译）
+## 6. 构建优化（模型下载）
 
-dlib 是唯一需要源码编译的依赖，也是构建耗时和内存消耗的主要原因。
+InsightFace 使用预训练模型，构建时会自动下载。如果服务器网络受限，建议手动下载并挂载。
 
-### 6.1 减少内存占用
+### 6.1 手动下载模型
+
+1. 从 InsightFace 官方仓库或镜像站下载 `buffalo_l` 模型包。
+2. 解压到 `backend/app/models/insightface/models/buffalo_l/`。
+
+### 6.2 镜像预热
+
+在生产环境部署前，建议先在本地构建并推送到私有仓库，避免在生产服务器上进行耗时的构建操作。
 
 ```bash
-# 单线程编译（最安全，峰值约 2-3GB）
-CMAKE_BUILD_PARALLEL_LEVEL=1 docker-compose -f docker-compose.deploy.yml build backend
+# 本地构建
+docker-compose -f docker-compose.deploy.yml build
 
-# 禁用 BuildKit（某些环境下更稳定）
-DOCKER_BUILDKIT=0 CMAKE_BUILD_PARALLEL_LEVEL=1 docker-compose -f docker-compose.deploy.yml build backend
+# 导出镜像
+docker save face-demo-backend:latest | gzip > backend.tar.gz
 ```
+
 
 ### 6.2 增加系统 Swap（内存不足时）
 
