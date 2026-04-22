@@ -143,6 +143,12 @@ def update_user(
         raise HTTPException(status_code=403, detail="只能管理本部门用户")
     
     update_data = user_update.model_dump(exclude_unset=True)
+    # 处理 PIN 码：明文传入时先哈希再存储，且不在响应中返回哈希
+    if "pin_code" in update_data:
+        plain_pin = update_data.pop("pin_code")
+        if plain_pin is not None:
+            from app.utils.auth import hash_password
+            user.pin_code = hash_password(plain_pin)
     for field, value in update_data.items():
         setattr(user, field, value)
 

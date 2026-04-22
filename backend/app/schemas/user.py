@@ -18,6 +18,7 @@ class UserUpdate(BaseModel):
     department: Optional[str] = Field(None, max_length=100)
     status: Optional[int] = Field(None, ge=0, le=1)
     role: Optional[str] = Field(None, max_length=20)
+    pin_code: Optional[str] = Field(None, max_length=6, description="设置PIN码(明文，将自动哈希)")
 
 
 class UserResponse(UserBase):
@@ -43,3 +44,12 @@ class UserListResponse(BaseModel):
 class UserRegisterResponse(UserResponse):
     face_detected: bool = False
     face_quality: Optional[str] = None
+
+
+class PinVerifyRequest(BaseModel):
+    pin_code: str = Field(..., min_length=4, max_length=6, description="PIN码")
+    device_code: Optional[str] = Field(None, description="门禁设备编号")
+
+
+class PinSetupRequest(BaseModel):
+    pin_code: str = Field(..., min_length=4, max_length=6, description="PIN码")

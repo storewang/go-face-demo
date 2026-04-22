@@ -7,6 +7,11 @@ import logging
 from app.config import settings
 from app.utils.auth import verify_password, hash_password, create_access_token, verify_token
 from app.rate_limit import limiter
+from datetime import datetime
+from app.schemas.user import PinVerifyRequest
+from app.models import User, AttendanceLog, ActionType, ResultType
+from app.database import SessionLocal
+from app.utils.auth import hash_password
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["认证"])
@@ -83,3 +88,48 @@ async def check_auth(authorization: Optional[str] = Header(None)):
     payload = verify_token(token)
     
     return {"authenticated": payload is not None}
+
+
+@router.post("/pin-verify")
+@limiter.limit("3/minute")  # Strict rate limit for security
+async def pin_verify(request: Request, body: PinVerifyRequest):
+    """PIN码验证开门（摄像头故障时后备通道）"""
+    db = SessionLocal()
+    try:
+        # 查询所有设置了PIN且状态为启用的用户
+        candidates = db.query(User).filter(User.pin_code.isnot(None), User.status == 1).all()
+        from app.schemas.user import UserResponse
+        for u in candidates:
+            if verify_password(body.pin_code, u.pin_code):
+                user_resp = UserResponse.model_validate(u)
+                # 记录考勤（和 websocket 逻辑保持一致）
+                today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                today_count = (
+                    db.query(AttendanceLog)
+                    .filter(AttendanceLog.user_id == u.id, AttendanceLog.created_at >= today_start)
+                    .count()
+                )
+                action_type = ActionType.CHECK_OUT if today_count > 0 else ActionType.CHECK_IN
+                record = AttendanceLog(
+                    user_id=u.id,
+                    employee_id=u.employee_id,
+                    name=u.name,
+                    action_type=action_type.value,
+                    result=ResultType.SUCCESS.value,
+                )
+                db.add(record)
+                db.commit()
+                db.refresh(record)
+                return {
+                    "code": 200,
+                    "data": {
+                        "user": user_resp.model_dump(),
+                        "action": "door_open",
+                        "action_type": action_type.value,
+                    },
+                    "message": "PIN验证成功",
+                }
+        # 未匹配到任何用户
+        return {"code": 200, "data": {"authenticated": False}, "message": "PIN验证失败"}
+    finally:
+        db.close()

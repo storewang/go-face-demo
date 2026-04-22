@@ -1,6 +1,7 @@
 import os
 from typing import List, Optional
 from pydantic_settings import BaseSettings
+from cryptography.fernet import Fernet
 from pydantic import field_validator, model_validator
 from pathlib import Path
 
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     FACE_MODEL_NAME: str = "buffalo_l"  # InsightFace 模型包名
     FACE_DET_SIZE: int = 640  # 检测输入分辨率
     FACE_PROVIDER: str = "CPUExecutionProvider"  # onnxruntime 推理后端
+    INSIGHTFACE_HOME: str = ""  # Optional: override default model directory
 
     DATA_DIR: Path = Path("./data")
     FACES_DIR: Path = DATA_DIR / "faces"
@@ -60,6 +62,12 @@ class Settings(BaseSettings):
     S3_ENCODING_BUCKET: str = "encodings"
     S3_SNAPSHOT_BUCKET: str = "snapshots"
 
+    # ===== 数据生命周期配置 =====
+    DATA_RETENTION_DAYS: int = 90  # 考勤记录保留天数
+    SNAPSHOT_RETENTION_DAYS: int = 30  # 抓拍图保留天数
+    AUDIT_RETENTION_DAYS: int = 365  # 审计日志保留天数（合规要求更长）
+    FACE_DATA_DELETE_ON_RESIGN: bool = True  # 员工离职自动删除人脸数据
+
     # ===== 安全配置 =====
     # 管理员密码哈希（优先使用哈希，兼容旧版明文密码）
     ADMIN_PASSWORD: Optional[str] = None  # 移除默认值，仅用于首次生成哈希
@@ -69,6 +77,25 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str  # 必填，无默认值
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 8
+
+    # 生物特征数据加密密钥（Fernet 对称密钥，允许为空以支持开发环境自动生成）
+    BIOMETRIC_ENCRYPTION_KEY: str = ""
+
+    @field_validator("BIOMETRIC_ENCRYPTION_KEY", mode="before")
+    @classmethod
+    def validate_biometric_encryption_key(cls, v):
+        """校验生物特征加密密钥。
+        允许为空（开发环境），非空时需为有效 Fernet 键。
+        """
+        key = v if v is not None else ""
+        if isinstance(key, str) and key == "":
+            return key
+        # 非空时，尝试构造 Fernet 实例以校验密钥格式
+        try:
+            Fernet(key.encode())
+        except Exception as e:
+            raise ValueError("BIOMETRIC_ENCRYPTION_KEY must be a valid Fernet key or empty for dev mode")
+        return key
 
     # CORS配置
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:80"]
