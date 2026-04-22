@@ -8,7 +8,9 @@ from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router, heartbeat_router as devices_heartbeat_router
 from app.api.statistics import router as statistics_router
 from app.api.self_service import router as self_service_router
+from app.api.audit import router as audit_router
 from app.utils.auth import get_current_user
+from app.api.events import router as events_router
 
 
 def verify_admin():
@@ -19,6 +21,8 @@ def verify_admin():
     return dependency
 
 
+# TODO: v4.0 — Add prefix="/api/v1" to api_router for API versioning
+# Currently all endpoints are under /api/ for backward compatibility
 api_router = APIRouter()
 
 api_router.include_router(auth_router)
@@ -29,3 +33,5 @@ api_router.include_router(users_router, dependencies=[Depends(verify_admin())])
 api_router.include_router(attendance_router, dependencies=[Depends(verify_admin())])
 api_router.include_router(statistics_router, dependencies=[Depends(get_current_user)])
 api_router.include_router(self_service_router, dependencies=[Depends(get_current_user)])
+api_router.include_router(audit_router, dependencies=[Depends(get_current_user)])
+api_router.include_router(events_router)  # SSE endpoint for real-time events (read-only)

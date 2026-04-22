@@ -94,13 +94,23 @@ async def _record_attendance(
         db.close()
 
 
-async def process_frame(websocket: WebSocket, frame_data: str, session: dict):
+async def process_frame(
+    websocket: WebSocket,
+    frame_data,
+    session: dict,
+    is_binary: bool = False,
+):
     if session.get("processing", False):
         return
 
     session["processing"] = True
     try:
-        image_bytes = base64.b64decode(frame_data)
+        # If the payload is binary data (bytes/ArrayBuffer on the server side), use it directly
+        if is_binary:
+            image_bytes = frame_data
+        else:
+            # Legacy path: base64-encoded string in JSON
+            image_bytes = base64.b64decode(frame_data)
         image = FaceUtils.load_image_from_bytes(image_bytes)
 
         faces = face_service.detect_faces(image)
@@ -214,17 +224,29 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             try:
-                data = await asyncio.wait_for(
-                    websocket.receive_text(), timeout=HEARTBEAT_TIMEOUT
+                msg = await asyncio.wait_for(
+                    websocket.receive(), timeout=HEARTBEAT_TIMEOUT
                 )
             except asyncio.TimeoutError:
                 log.info("ws_heartbeat_timeout", active=len(manager.active_connections))
                 await websocket.close(code=4000, reason="Heartbeat timeout")
                 break
 
-            message = json.loads(data)
+            # msg is a dict like: {"type": "websocket.receive", "text": "..."} or
+            # {"type": "websocket.receive", "bytes": b"..."}
+            message = None
+            if isinstance(msg, dict) and msg.get("type") == "websocket.receive":
+                if "bytes" in msg:
+                    # Binary frame payload (JPEG bytes)
+                    await process_frame(websocket, msg["bytes"], session, is_binary=True)
+                    continue
+                if "text" in msg:
+                    data = msg["text"]
+                    message = json.loads(data)
+            else:
+                continue
 
-            if message.get("type") == "register":
+            if message and message.get("type") == "register":
                 device_code = message.get("device_code")
                 if device_code:
                     db = SessionLocal()
@@ -287,11 +309,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         db.close()
                 continue
 
-            if message.get("type") == "frame":
+            if message and message.get("type") == "frame":
                 frame_data = message.get("data", "")
                 await process_frame(websocket, frame_data, session)
 
-            elif message.get("type") == "ping":
+            elif message and message.get("type") == "ping":
                 session["last_ping"] = datetime.now().timestamp()
                 await manager.send_json(websocket, {"type": "pong"})
 

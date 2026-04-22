@@ -27,6 +27,9 @@ class ConnectionManager:
     async def send_json(self, websocket: WebSocket, data: dict):
         await websocket.send_json(data)
 
+    async def send_bytes(self, websocket: WebSocket, data: bytes):
+        await websocket.send_bytes(data)
+
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
             await connection.send_json(message)
