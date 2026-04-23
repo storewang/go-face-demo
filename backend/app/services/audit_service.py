@@ -26,7 +26,6 @@ class AuditService:
         """记录审计事件"""
         raw_data = json.dumps(extra_data or {}, ensure_ascii=False)
         timestamp = datetime.now().isoformat()
-        hmac_sig = compute_hmac(event_type, user_id, timestamp, raw_data)
         
         record = AuditLog(
             event_type=event_type,
@@ -37,10 +36,16 @@ class AuditService:
             confidence=confidence,
             snapshot_path=snapshot_path,
             raw_data=raw_data,
-            hmac_signature=hmac_sig,
+            hmac_signature=compute_hmac(event_type, user_id, timestamp, raw_data),
         )
         db.add(record)
-        db.flush()  # Flush to get ID but don't commit (caller controls transaction)
+        db.flush()
+        
+        # 如果数据库生成了 created_at，用其重新计算 HMAC 以保证可验证
+        if record.created_at:
+            db_ts = record.created_at.isoformat()
+            if db_ts != timestamp:
+                record.hmac_signature = compute_hmac(event_type, user_id, db_ts, raw_data)
         return record
 
 audit_service = AuditService()

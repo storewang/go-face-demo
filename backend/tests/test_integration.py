@@ -385,14 +385,14 @@ class TestDevices:
         r = client.get("/api/devices", headers=admin_headers)
         assert r.status_code == 200
         data = r.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
+        assert isinstance(data["items"], list)
+        assert data["total"] >= 1
 
     def test_list_filter_status(self, admin_headers, create_device):
         create_device(device_code="ON_01", status=1)
         create_device(device_code="OFF_01", status=0)
         r = client.get("/api/devices", headers=admin_headers, params={"status": 1})
-        assert all(d["status"] == 1 for d in r.json())
+        assert all(d["status"] == 1 for d in r.json()["items"])
 
     def test_get_device(self, admin_headers, test_device):
         r = client.get(f"/api/devices/{test_device.id}", headers=admin_headers)
@@ -453,14 +453,12 @@ class TestDevices:
         )
 
     def test_is_online(self, admin_headers, test_device):
-        # 无心跳时离线
         r = client.get("/api/devices", headers=admin_headers)
-        dev = next(d for d in r.json() if d["device_code"] == "DEV001")
+        dev = next(d for d in r.json()["items"] if d["device_code"] == "DEV001")
         assert dev["is_online"] is False
-        # 有心跳后在线
         client.post("/api/devices/heartbeat", json={"device_code": "DEV001"})
         r = client.get("/api/devices", headers=admin_headers)
-        dev = next(d for d in r.json() if d["device_code"] == "DEV001")
+        dev = next(d for d in r.json()["items"] if d["device_code"] == "DEV001")
         assert dev["is_online"] is True
 
     def test_unauthorized(self):

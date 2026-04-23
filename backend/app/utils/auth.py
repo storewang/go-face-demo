@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import HTTPException, Header
 
 from jose import JWTError, jwt
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 import structlog
 
 from app.config import settings
@@ -14,11 +14,11 @@ log = structlog.get_logger(__name__)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.verify(plain_password, hashed_password)
+    return _bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hash(password)
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
