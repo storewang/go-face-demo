@@ -36,16 +36,16 @@ if "cv2" not in sys.modules:
     m.IMREAD_UNCHANGED = -1
     sys.modules["cv2"] = m
 
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-1234567890")
-os.environ.setdefault("ADMIN_PASSWORD", "test_admin_123")
-os.environ.setdefault("DATABASE_URL", "sqlite:///./test_db.db")
-os.environ.setdefault("CORS_ORIGINS", '["http://localhost"]')
-os.environ.setdefault("DEBUG", "true")
-os.environ.setdefault("REDIS_HOST", "localhost")
-os.environ.setdefault("REDIS_PORT", "63790")
-os.environ.setdefault("S3_ENDPOINT", "localhost:9000")
-os.environ.setdefault("S3_ACCESS_KEY", "")
-os.environ.setdefault("S3_SECRET_KEY", "")
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-1234567890"
+os.environ["ADMIN_PASSWORD"] = "test_admin_123"
+os.environ["DATABASE_URL"] = "sqlite:///./test_db.db"
+os.environ["CORS_ORIGINS"] = '["http://localhost"]'
+os.environ["DEBUG"] = "true"
+os.environ["REDIS_HOST"] = "localhost"
+os.environ["REDIS_PORT"] = "63790"
+os.environ["S3_ENDPOINT"] = "localhost:9000"
+os.environ["S3_ACCESS_KEY"] = ""
+os.environ["S3_SECRET_KEY"] = ""
 
 import pytest
 from sqlalchemy import create_engine
