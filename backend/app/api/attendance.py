@@ -239,10 +239,10 @@ def _create_check_record(
         user_id=user_id,
         employee_id=final_employee_id,
         name=name,
-        action_type=action_type,
+        action_type=action_type.value,
         confidence=confidence,
         snapshot_path=snapshot_path,
-        result=result_type,
+        result=result_type.value,
     )
     db.add(record)
     db.commit()

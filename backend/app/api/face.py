@@ -22,6 +22,9 @@ router = APIRouter(prefix="/api/face", tags=["人脸识别"])
 
 @router.post("/detect", response_model=FaceDetectResponse, summary="检测人脸")
 def detect_face(image: UploadFile = File(..., description="图像文件")):
+    if not face_service.ready:
+        raise HTTPException(status_code=503, detail="人脸识别服务正在加载中，请稍候")
+
     image_bytes = image.file.read()
     img = FaceUtils.load_image_from_bytes(image_bytes)
 
@@ -48,6 +51,9 @@ def detect_face(image: UploadFile = File(..., description="图像文件")):
     "/recognize", response_model=FaceVerifyResponse, summary="人脸识别（无活体检测）"
 )
 def recognize_face(image: UploadFile = File(..., description="图像文件")):
+    if not face_service.ready:
+        raise HTTPException(status_code=503, detail="人脸识别服务正在加载中，请稍候")
+
     image_bytes = image.file.read()
     img = FaceUtils.load_image_from_bytes(image_bytes)
 
@@ -78,6 +84,9 @@ def verify_face(
     images: List[UploadFile] = File(..., description="连续帧图像（3-5张）"),
     check_liveness: bool = Form(True, description="是否进行活体检测"),
 ):
+    if not face_service.ready:
+        raise HTTPException(status_code=503, detail="人脸识别服务正在加载中，请稍候")
+
     if len(images) < 1:
         raise HTTPException(status_code=400, detail="至少需要1张图像")
 
@@ -186,6 +195,9 @@ async def register_face(
     image: UploadFile = File(..., description="人脸照片"),
     db: Session = Depends(get_db),
 ):
+    if not face_service.ready:
+        raise HTTPException(status_code=503, detail="人脸识别服务正在加载中，请稍候")
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")

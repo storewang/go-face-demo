@@ -21,12 +21,12 @@ def verify_admin():
     return dependency
 
 
-# TODO: v4.0 — Add prefix="/api/v1" to api_router for API versioning
-# Currently all endpoints are under /api/ for backward compatibility
+# v4.0 API 版本化准备：子路由已有 /api 前缀，
+# 如需统一版本化需同步修改所有子路由 prefix 并更新前端 baseURL
 api_router = APIRouter()
 
 api_router.include_router(auth_router)
-api_router.include_router(face_router)
+api_router.include_router(face_router, dependencies=[Depends(get_current_user)])
 api_router.include_router(devices_router, dependencies=[Depends(get_current_user)])
 api_router.include_router(devices_heartbeat_router)  # 心跳接口免认证
 api_router.include_router(users_router, dependencies=[Depends(verify_admin())])
@@ -34,4 +34,4 @@ api_router.include_router(attendance_router, dependencies=[Depends(verify_admin(
 api_router.include_router(statistics_router, dependencies=[Depends(get_current_user)])
 api_router.include_router(self_service_router, dependencies=[Depends(get_current_user)])
 api_router.include_router(audit_router, dependencies=[Depends(get_current_user)])
-api_router.include_router(events_router)  # SSE endpoint for real-time events (read-only)
+api_router.include_router(events_router, dependencies=[Depends(get_current_user)])

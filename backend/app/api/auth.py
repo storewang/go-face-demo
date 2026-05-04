@@ -11,7 +11,6 @@ from datetime import datetime
 from app.schemas.user import PinVerifyRequest
 from app.models import User, AttendanceLog, ActionType, ResultType
 from app.database import SessionLocal
-from app.utils.auth import hash_password
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["认证"])
@@ -68,7 +67,11 @@ async def login(request: Request, body: LoginRequest):
     
     return {
         "code": 200,
-        "data": {"token": access_token},
+        "data": {
+            "token": access_token,
+            "role": "super_admin",
+            "name": "管理员",
+        },
         "message": "登录成功"
     }
 
@@ -103,13 +106,19 @@ async def pin_verify(request: Request, body: PinVerifyRequest):
             if verify_password(body.pin_code, u.pin_code):
                 user_resp = UserResponse.model_validate(u)
                 # 记录考勤（和 websocket 逻辑保持一致）
+                from app.models.attendance import AttendanceLog
                 today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                today_count = (
+                latest_record = (
                     db.query(AttendanceLog)
                     .filter(AttendanceLog.user_id == u.id, AttendanceLog.created_at >= today_start)
-                    .count()
+                    .order_by(AttendanceLog.created_at.desc())
+                    .first()
                 )
-                action_type = ActionType.CHECK_OUT if today_count > 0 else ActionType.CHECK_IN
+                action_type = (
+                    ActionType.CHECK_OUT
+                    if latest_record and latest_record.action_type == ActionType.CHECK_IN.value
+                    else ActionType.CHECK_IN
+                )
                 record = AttendanceLog(
                     user_id=u.id,
                     employee_id=u.employee_id,

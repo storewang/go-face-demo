@@ -1,6 +1,7 @@
 import base64
 import json
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import structlog
 from datetime import datetime
@@ -17,6 +18,8 @@ from app.utils.face_utils import FaceUtils
 import cv2
 
 log = structlog.get_logger(__name__)
+
+_cpu_executor = ThreadPoolExecutor(max_workers=4)
 
 FRAME_BUFFER_SIZE = 5
 COOLDOWN_SECONDS = 3
@@ -39,8 +42,12 @@ async def _send_status(websocket: WebSocket, stage: str, message: str):
 async def _check_liveness(session: dict) -> bool:
     try:
         liveness = get_liveness_service()
-        liveness_result = liveness.check_liveness(
-            session["frames"], session["face_locations"], session["face_keypoints"]
+        liveness_result = await asyncio.get_event_loop().run_in_executor(
+            _cpu_executor,
+            liveness.check_liveness,
+            session["frames"],
+            session["face_locations"],
+            session["face_keypoints"],
         )
         if not liveness_result["passed"]:
             return False
@@ -62,25 +69,31 @@ async def _record_attendance(
         cv2.imwrite(snapshot_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        today_records = (
+        latest_record = (
             db.query(AttendanceLog)
             .filter(
                 AttendanceLog.user_id == user["id"],
                 AttendanceLog.created_at >= today_start,
             )
-            .count()
+            .order_by(AttendanceLog.created_at.desc())
+            .first()
         )
 
-        action_type = ActionType.CHECK_OUT if today_records > 0 else ActionType.CHECK_IN
+        # 配对模式：最新记录是签到则本次为签退，否则为签到
+        action_type = (
+            ActionType.CHECK_OUT
+            if latest_record and latest_record.action_type == ActionType.CHECK_IN.value
+            else ActionType.CHECK_IN
+        )
 
         record_data = {
             "user_id": user["id"],
             "employee_id": user["employee_id"],
             "name": user["name"],
-            "action_type": action_type,
+            "action_type": action_type.value,
             "confidence": confidence,
             "snapshot_path": snapshot_path,
-            "result": ResultType.SUCCESS,
+            "result": ResultType.SUCCESS.value,
         }
         if session.get("device_id"):
             record_data["device_id"] = session["device_id"]
@@ -105,15 +118,19 @@ async def process_frame(
 
     session["processing"] = True
     try:
-        # If the payload is binary data (bytes/ArrayBuffer on the server side), use it directly
+        if not face_service.ready:
+            await _send_status(websocket, "error", "人脸识别服务正在加载中，请稍候...")
+            return
+
         if is_binary:
             image_bytes = frame_data
         else:
-            # Legacy path: base64-encoded string in JSON
             image_bytes = base64.b64decode(frame_data)
         image = FaceUtils.load_image_from_bytes(image_bytes)
 
-        faces = face_service.detect_faces(image)
+        faces = await asyncio.get_event_loop().run_in_executor(
+            _cpu_executor, face_service.detect_faces, image
+        )
 
         if len(faces) == 0:
             await _send_status(websocket, "detecting", "未检测到人脸，请对准摄像头")
@@ -145,8 +162,12 @@ async def process_frame(
         liveness_ok = await _check_liveness(session)
         if not liveness_ok:
             liveness = get_liveness_service()
-            liveness_result = liveness.check_liveness(
-                session["frames"], session["face_locations"], session["face_keypoints"]
+            liveness_result = await asyncio.get_event_loop().run_in_executor(
+                _cpu_executor,
+                liveness.check_liveness,
+                session["frames"],
+                session["face_locations"],
+                session["face_keypoints"],
             )
             msg = (
                 liveness_result.get("message", "请眨眼或点头")
@@ -157,7 +178,9 @@ async def process_frame(
             _clear_buffers(session)
             return
 
-        result = face_service.verify_user(image)
+        result = await asyncio.get_event_loop().run_in_executor(
+            _cpu_executor, face_service.verify_user, image
+        )
 
         if not result["success"]:
             reason = result.get("reason", "unknown")
@@ -248,6 +271,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if message and message.get("type") == "register":
                 device_code = message.get("device_code")
+                device_secret = message.get("device_secret")
                 if device_code:
                     db = SessionLocal()
                     try:
@@ -283,6 +307,22 @@ async def websocket_endpoint(websocket: WebSocket):
                             )
                             await websocket.close()
                             return
+
+                        if device.secret_hash and device_secret:
+                            from app.utils.auth import verify_password as verify_secret
+                            if not verify_secret(device_secret, device.secret_hash):
+                                await manager.send_json(
+                                    websocket,
+                                    {
+                                        "type": "error",
+                                        "data": {
+                                            "message": "设备密钥验证失败",
+                                            "code": "DEVICE_AUTH_FAILED",
+                                        },
+                                    },
+                                )
+                                await websocket.close()
+                                return
 
                         session["device_id"] = device.id
                         session["device_code"] = device.device_code

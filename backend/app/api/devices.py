@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+import secrets
 
 from app.database import get_db
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, hash_password, verify_password
 from app.utils.permissions import require_role, RoleType
 from app.models import Device
 from app.schemas.device import DeviceCreate, DeviceUpdate, DeviceResponse
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/api/devices", tags=["设备管理"])
 heartbeat_router = APIRouter(prefix="/api/devices", tags=["设备管理"])
 
 
-@router.post("", response_model=DeviceResponse, summary="添加设备")
+@router.post("", summary="添加设备")
 async def create_device(
     data: DeviceCreate,
     db: Session = Depends(get_db),
@@ -40,11 +41,25 @@ async def create_device(
     if existing:
         raise HTTPException(status_code=400, detail="设备编号已存在")
     
+    device_secret = secrets.token_urlsafe(32)
     device = Device(**data.model_dump())
+    device.secret_hash = hash_password(device_secret)
     db.add(device)
     db.commit()
     db.refresh(device)
-    return device
+    
+    return {
+        "id": device.id,
+        "device_code": device.device_code,
+        "name": device.name,
+        "location": device.location,
+        "status": device.status,
+        "last_heartbeat": device.last_heartbeat,
+        "description": device.description,
+        "created_at": device.created_at,
+        "updated_at": device.updated_at,
+        "device_secret": device_secret,
+    }
 
 
 @router.get("", response_model=DeviceListResponse, summary="设备列表")
@@ -113,6 +128,23 @@ async def update_device(
     db.commit()
     db.refresh(device)
     return device
+
+
+@router.post("/{device_id}/reset-secret", summary="重置设备密钥")
+async def reset_device_secret(
+    device_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role(RoleType.SUPER_ADMIN))
+):
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="设备不存在")
+
+    new_secret = secrets.token_urlsafe(32)
+    device.secret_hash = hash_password(new_secret)
+    db.commit()
+
+    return {"device_code": device.device_code, "device_secret": new_secret}
 
 
 @router.delete("/{device_id}", summary="删除设备")
