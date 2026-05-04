@@ -218,17 +218,20 @@ async function fetchUsers() {
       page: currentPage.value,
       page_size: pageSize.value
     })
-    const items = res.data?.items || res.items || []
+    const items = res.items || []
     // 兼容 Java camelCase 和 Python snake_case
-    users.value = items.map((u: Record<string, any>) => ({
-      ...u,
-      employee_id: u.employee_id || u.employeeId,
-      face_encoding_path: u.face_encoding_path ?? u.face_image_path ?? u.hasFaceEncoding ?? u.has_face_encoding,
-      created_at: u.created_at || u.createdAt,
-      updated_at: u.updated_at || u.updatedAt,
-      department: u.department,
-    }))
-    total.value = res.data?.total || res.total || 0
+    users.value = items.map((u) => {
+      const raw = u as unknown as Record<string, unknown>
+      return {
+        ...u,
+        employee_id: (raw.employee_id || raw.employeeId || u.employee_id) as string,
+        face_encoding_path: (raw.face_encoding_path ?? raw.face_image_path ?? u.face_encoding_path) as string | undefined,
+        created_at: (raw.created_at || u.created_at) as string | undefined,
+        updated_at: (raw.updated_at || u.updated_at) as string | undefined,
+        department: u.department,
+      }
+    })
+    total.value = res.total || 0
   } catch (error: unknown) {
     const err = error as Error
     ElMessage.error('获取用户列表失败: ' + err.message)
@@ -360,22 +363,22 @@ async function capturePhoto() {
 
   detecting.value = true
   try {
-    const detectResult = await faceApi.detectFace(result.file) as Record<string, any>
-    const detectData = detectResult.data || detectResult
+    const detectResult = await faceApi.detectFace(result.file)
+    const detectData = detectResult as unknown as Record<string, unknown>
 
-    if (detectData.faces_detected === 0) {
+    if ((detectData.faces_detected as number) === 0) {
       ElMessage.warning('未检测到人脸，请重拍')
       retake()
       return
     }
 
-    if (detectData.faces_detected > 1) {
+    if ((detectData.faces_detected as number) > 1) {
       ElMessage.warning('检测到多张人脸，请确保只有一人')
       retake()
       return
     }
 
-    faceQuality.value = detectData.faces[0].quality
+    faceQuality.value = (detectData.faces as Record<string, unknown>[])[0].quality as string
 
     if (faceQuality.value === 'poor') {
       ElMessage.warning('人脸质量较差，请调整光线或位置后重拍')
@@ -402,15 +405,12 @@ async function confirmRegister() {
   try {
     const result = await faceApi.registerFace(currentUser.value.id, capturedFile.value)
 
-    // Compatible with both wrapped {code,data:{success}} and unwrapped {success} responses
-    const regData = result.data || result
-
-    if (regData.success) {
+    if (result.success) {
       ElMessage.success('人脸录入成功')
       faceDialogVisible.value = false
       await fetchUsers()
     } else {
-      ElMessage.warning(regData.message || '人脸录入失败')
+      ElMessage.warning(result.message || '人脸录入失败')
     }
   } catch (error) {
     console.error('Face register failed:', error)

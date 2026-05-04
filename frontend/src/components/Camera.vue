@@ -162,13 +162,13 @@ function capturePhoto(): { base64: string; file: File } | null {
   if (!videoRef.value) return null
 
   const canvas = document.createElement('canvas')
-  canvas.width = props.width
-  canvas.height = props.height
+  canvas.width = videoRef.value.videoWidth
+  canvas.height = videoRef.value.videoHeight
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
-  ctx.drawImage(videoRef.value, 0, 0, canvas.width, canvas.height)
+  ctx.drawImage(videoRef.value, 0, 0)
 
   const base64 = canvas.toDataURL('image/jpeg', 0.8)
   capturedImage.value = base64
@@ -207,13 +207,13 @@ function getCurrentFrame(): string | null {
   if (!videoRef.value) return null
 
   const canvas = document.createElement('canvas')
-  canvas.width = props.width
-  canvas.height = props.height
+  canvas.width = videoRef.value.videoWidth
+  canvas.height = videoRef.value.videoHeight
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
-  ctx.drawImage(videoRef.value, 0, 0, canvas.width, canvas.height)
+  ctx.drawImage(videoRef.value, 0, 0)
   return canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
 }
 

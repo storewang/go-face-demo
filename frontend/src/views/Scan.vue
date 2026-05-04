@@ -121,9 +121,9 @@
               </el-avatar>
 
               <div class="user-details">
-                <div class="user-name">{{ lastResult.user?.name }}</div>
-                <div class="user-id">工号: {{ lastResult.user?.employeeId }}</div>
-                <div class="user-dept">{{ lastResult.user?.department }}</div>
+                <div class="user-name">{{ resultUser?.name }}</div>
+                <div class="user-id">工号: {{ resultUser?.employee_id }}</div>
+                <div class="user-dept">{{ resultUser?.department }}</div>
               </div>
             </div>
 
@@ -133,7 +133,7 @@
               <div class="detail-item">
                 <span class="label">置信度:</span>
                 <el-progress
-                  :percentage="Math.round(lastResult.confidence * 100)"
+                  :percentage="Math.round(Number(lastResult.confidence) * 100)"
                   :color="confidenceColor"
                 />
               </div>
@@ -221,7 +221,6 @@ import {
   Key
 } from '@element-plus/icons-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { useCamera } from '@/composables/useCamera'
 import { useOnlineStatus } from '@/composables/useOnlineStatus'
 import * as deviceApi from '@/api/device'
 import type { Device } from '@/types/device'
@@ -239,7 +238,7 @@ const statusMessage = ref('')
 const statusIcon = ref(Loading)
 const lastResult = ref<Record<string, unknown> | null>(null)
 const showDoorOpen = ref(false)
-const scanHistory = ref<Array<Record<string, unknown>>>([])
+const scanHistory = ref<Array<{ id: number; name: string; action: string; time: string; success: boolean }>>([])
 
 // 网络状态与 PIN 码回退
 const { isOnline } = useOnlineStatus()
@@ -257,14 +256,10 @@ const {
   isConnected,
   connect,
   disconnect,
-  send,
   sendBinary,
   onMessage,
   onRegistered
 } = useWebSocket()
-
-// Camera utilities for binary capture
-const { captureFrameBlob } = useCamera()
 
 let stream: MediaStream | null = null
 let frameInterval: number | null = null
@@ -295,10 +290,15 @@ const resultTitle = computed(() =>
 
 const confidenceColor = computed(() => {
   if (!lastResult.value) return '#409EFF'
-  const conf = lastResult.value.confidence as number
+  const conf = Number(lastResult.value.confidence) || 0
   if (conf >= 0.8) return '#67C23A'
   if (conf >= 0.6) return '#E6A23C'
   return '#F56C6C'
+})
+
+const resultUser = computed(() => {
+  if (!lastResult.value?.user) return null
+  return lastResult.value.user as Record<string, unknown> | null
 })
 
 // 加载设备列表
@@ -337,7 +337,7 @@ async function startScanning() {
       ElMessage.success(`已连接到设备: ${device.device_name}`)
     })
 
-    onMessage(handleWebSocketMessage)
+    onMessage(handleWebSocketMessage as (data: unknown) => void)
 
     isStreaming.value = true
     statusMessage.value = '请对准摄像头...'
@@ -376,9 +376,12 @@ function stopScanning() {
 }
 
 function startFrameSending() {
+  if (frameInterval) {
+    clearInterval(frameInterval)
+    frameInterval = null
+  }
   frameInterval = window.setInterval(() => {
     if (!videoRef.value || !isConnected.value) return
-    // Capture a binary frame (Blob) and send as binary frame
     captureFrameBlob(videoRef.value!, 0.75)
       .then((blob) => {
         if (blob && sendBinary) {
@@ -387,7 +390,22 @@ function startFrameSending() {
       })
   }, 400)
 }
-// Removed legacy captureFrame, keep binary path (captureFrameBlob provided by useCamera)
+
+function captureFrameBlob(video: HTMLVideoElement, quality: number = 0.8): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { resolve(null); return }
+    ctx.drawImage(video, 0, 0)
+    canvas.toBlob(
+      (blob) => resolve(blob),
+      'image/jpeg',
+      quality
+    )
+  })
+}
 
 function handleWebSocketMessage(data: Record<string, unknown>) {
   if (data.type === 'status') {
@@ -405,11 +423,14 @@ function handleWebSocketMessage(data: Record<string, unknown>) {
       const userData = (resultData.user || {}) as Record<string, unknown>
       scanHistory.value.unshift({
         id: Date.now(),
-        name: userData.name,
+        name: String(userData.name || ''),
         action: resultData.action_type === 'CHECK_OUT' ? '下班打卡' : '上班打卡',
         time: formatTime(new Date()),
         success: true
       })
+      if (scanHistory.value.length > 50) {
+        scanHistory.value = scanHistory.value.slice(0, 50)
+      }
 
       setTimeout(() => {
         showDoorOpen.value = false

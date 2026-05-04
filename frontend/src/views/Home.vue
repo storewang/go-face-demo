@@ -69,7 +69,6 @@ import {
   Clock,
   SuccessFilled
 } from '@element-plus/icons-vue'
-import * as userApi from '@/api/user'
 import * as statisticsApi from '@/api/statistics'
 
 const menuItems = [
@@ -112,10 +111,7 @@ const stats = ref({
 
 onMounted(async () => {
   try {
-    const [users, dailyStats] = await Promise.all([
-      userApi.getUsers({ page: 1, page_size: 1 }),
-      statisticsApi.getDailyStats()
-    ])
+    const dailyStats = await statisticsApi.getDailyStats()
 
     stats.value.userCount = dailyStats.total_employees
     stats.value.checkInCount = dailyStats.action_breakdown?.CHECK_IN || 0

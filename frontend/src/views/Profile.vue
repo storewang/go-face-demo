@@ -184,16 +184,20 @@ async function fetchData() {
       )
       todayStats.value = {
         date: today,
+        total_employees: 0,
         total_users: 0,
-        check_in_count: todayRecords.filter((r) => r.action_type === 'check_in').length,
-        check_out_count: todayRecords.filter((r) => r.action_type === 'check_out').length,
+        check_in_count: todayRecords.filter((r) => r.action_type === 'check_in' || r.action_type === 'CHECK_IN').length,
+        check_out_count: todayRecords.filter((r) => r.action_type === 'check_out' || r.action_type === 'CHECK_OUT').length,
         attendance_count: todayRecords.length,
-        success_count: todayRecords.filter((r) => r.result === 'success').length,
-        fail_count: todayRecords.filter((r) => r.result !== 'success').length,
+        success_count: todayRecords.filter((r) => r.result === 'success' || r.result === 'SUCCESS').length,
+        fail_count: todayRecords.filter((r) => r.result !== 'success' && r.result !== 'SUCCESS').length,
+        present_count: 0,
+        absent_count: 0,
+        action_breakdown: {},
+        attendance_rate: 0,
         normal_count: 0,
         late_count: 0,
-        early_count: 0,
-        absent_count: 0
+        early_count: 0
       }
     }
   } catch (e) {
