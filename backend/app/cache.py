@@ -4,12 +4,16 @@ Redis 缓存模块
 Phase 3 性能优化：识别结果缓存、用户信息缓存
 """
 import json
+import threading
 import redis
+import structlog
 from app.config import settings
 from typing import Optional, Any
 
-# 全局 Redis 客户端实例
 _redis_client: Optional["RedisClient"] = None
+_singleton_lock = threading.Lock()
+
+log = structlog.get_logger(__name__)
 
 
 class RedisClient:
@@ -29,26 +33,24 @@ class RedisClient:
         try:
             self.client.ping()
             self._available = True
-        except Exception:
-            # Redis 不可用时降级为无缓存模式
+        except Exception as e:
             self._available = False
+            log.warning("redis_unavailable", error=str(e))
 
     @property
     def available(self) -> bool:
-        """检查 Redis 是否可用"""
         return self._available
 
     def get(self, key: str) -> Optional[str]:
-        """获取缓存值"""
         if not self._available:
             return None
         try:
             return self.client.get(key)
-        except Exception:
+        except Exception as e:
+            log.warning("redis_get_failed", key=key, error=str(e))
             return None
 
     def set(self, key: str, value: str, ttl: int = None):
-        """设置缓存值（可选 TTL）"""
         if not self._available:
             return
         try:
@@ -56,53 +58,48 @@ class RedisClient:
                 self.client.setex(key, ttl, value)
             else:
                 self.client.set(key, value)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("redis_set_failed", key=key, error=str(e))
 
     def delete(self, key: str):
-        """删除缓存"""
         if not self._available:
             return
         try:
             self.client.delete(key)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("redis_delete_failed", key=key, error=str(e))
 
     def exists(self, key: str) -> bool:
-        """检查 key 是否存在"""
         if not self._available:
             return False
         try:
             return bool(self.client.exists(key))
-        except Exception:
+        except Exception as e:
+            log.warning("redis_exists_failed", key=key, error=str(e))
             return False
 
     def publish(self, channel: str, message: str):
-        """发布消息到频道"""
         if not self._available:
             return
         try:
             self.client.publish(channel, message)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("redis_publish_failed", channel=channel, error=str(e))
 
     def get_json(self, key: str) -> Optional[dict]:
-        """获取 JSON 格式的缓存值"""
         val = self.get(key)
         return json.loads(val) if val else None
 
     def set_json(self, key: str, value: dict, ttl: int = None):
-        """设置 JSON 格式的缓存值"""
         self.set(key, json.dumps(value, ensure_ascii=False), ttl)
 
 
 def get_redis_client() -> RedisClient:
-    """获取 Redis 客户端单例"""
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = RedisClient()
-    return _redis_client
+    with _singleton_lock:
+        global _redis_client
+        if _redis_client is None:
+            _redis_client = RedisClient()
+        return _redis_client
 
 
-# 导出全局实例供外部使用（兼容旧代码）
 redis_client = get_redis_client()

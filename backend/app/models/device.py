@@ -11,6 +11,7 @@ class Device(Base):
     name = Column(String(100), nullable=False)
     location = Column(String(200), nullable=True)
     status = Column(Integer, default=1)
+    secret_hash = Column(String(255), nullable=True, comment="设备密钥 bcrypt 哈希")
     last_heartbeat = Column(DateTime, nullable=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

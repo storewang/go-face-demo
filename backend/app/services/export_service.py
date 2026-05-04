@@ -38,11 +38,14 @@ class ExportService:
             )
 
         # 自动调整列宽
+        max_scan_rows = 200
         for idx, col in enumerate(headers, 1):
             max_length = len(col)
-            for row in ws.iter_rows(
+            for i, row in enumerate(ws.iter_rows(
                 min_row=2, min_col=idx, max_col=idx, values_only=True
-            ):
+            )):
+                if i >= max_scan_rows:
+                    break
                 cell_len = len(str(row[0])) if row[0] else 0
                 if cell_len > max_length:
                     max_length = cell_len

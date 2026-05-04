@@ -6,7 +6,7 @@ Phase 4 功能扩展（第二批）
 import json
 import structlog
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.cache import redis_client
 
@@ -35,7 +35,7 @@ class NotificationService:
             "title": title,
             "message": message,
             "data": data or {},
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         if redis_client.available:
             redis_client.publish(channel, json.dumps(payload, ensure_ascii=False))

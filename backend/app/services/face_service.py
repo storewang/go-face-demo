@@ -40,6 +40,7 @@ class FaceService:
         self.threshold = settings.FACE_THRESHOLD
         self._ready = False
         self._face_app: Optional[FaceAnalysis] = None
+        self._lock = threading.RLock()
         self._load_thread = threading.Thread(target=self._async_load, daemon=True)
         self._load_thread.start()
 
@@ -71,25 +72,28 @@ class FaceService:
                 .all()
             )
 
-            for user in users:
-                encoding = self._load_encoding(
-                    user.employee_id, user.face_encoding_path
-                )
-                if encoding is not None:
-                    self.known_encodings.append(encoding)
-                    self.known_users.append(
-                        {
-                            "id": user.id,
-                            "employee_id": user.employee_id,
-                            "name": user.name,
-                            "department": user.department,
-                        }
+            with self._lock:
+                self.known_encodings.clear()
+                self.known_users.clear()
+                for user in users:
+                    encoding = self._load_encoding(
+                        user.employee_id, user.face_encoding_path
                     )
+                    if encoding is not None:
+                        self.known_encodings.append(encoding)
+                        self.known_users.append(
+                            {
+                                "id": user.id,
+                                "employee_id": user.employee_id,
+                                "name": user.name,
+                                "department": user.department,
+                            }
+                        )
 
-            log.info("known_faces_loaded", count=len(self.known_encodings))
-            KNOWN_FACES_GAUGE.set(len(self.known_encodings))
-            self._rebuild_index()
-            self._ready = True
+                log.info("known_faces_loaded", count=len(self.known_encodings))
+                KNOWN_FACES_GAUGE.set(len(self.known_encodings))
+                self._rebuild_index()
+                self._ready = True
         except Exception as e:
             log.error("failed_to_load_known_faces", error=str(e))
             self._ready = False
@@ -156,9 +160,11 @@ class FaceService:
     
 
     def reload_faces(self, db: Session):
-        self.known_encodings = []
-        self.known_users = []
-        self._load_known_faces_from_db(db)
+        with self._lock:
+            self.known_encodings.clear()
+            self.known_users.clear()
+            self.known_matrix = None
+            self._load_known_faces_from_db(db)
 
     def _load_known_faces_from_db(self, db: Session):
         users = (
@@ -250,9 +256,6 @@ class FaceService:
         if not user:
             return {"success": False, "quality": None, "message": "用户不存在"}
 
-        self._save_encoding(user.employee_id, face["encoding"])
-        self._save_face_image(user.employee_id, image)
-
         encoding_path = f"s3://{settings.S3_ENCODING_BUCKET}/{user.employee_id}.npy"
         image_path = f"s3://{settings.S3_FACE_BUCKET}/{user.employee_id}.jpg"
         if not storage_service.available:
@@ -263,6 +266,16 @@ class FaceService:
         user.face_image_path = image_path
         db.commit()
 
+        try:
+            self._save_encoding(user.employee_id, face["encoding"])
+            self._save_face_image(user.employee_id, image)
+        except Exception:
+            user.face_encoding_path = None
+            user.face_image_path = None
+            db.commit()
+            log.error("face_storage_failed_rollback", user_id=user_id)
+            return {"success": False, "quality": None, "message": "人脸数据存储失败，请重试"}
+
         self.reload_faces(db)
         log.info("face_registered", user_id=user_id, employee_id=user.employee_id)
 
@@ -272,34 +285,35 @@ class FaceService:
         return self._recognize_numpy(encoding)
 
     def _recognize_numpy(self, encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
-        if self.known_matrix is None or len(self.known_encodings) == 0:
-            return None, 0.0
+        with self._lock:
+            if self.known_matrix is None or len(self.known_encodings) == 0:
+                return None, 0.0
 
-        similarities = self.known_matrix @ encoding
-        max_idx = int(np.argmax(similarities))
-        max_similarity = float(similarities[max_idx])
+            similarities = self.known_matrix @ encoding
+            max_idx = int(np.argmax(similarities))
+            max_similarity = float(similarities[max_idx])
 
-        confidence = max_similarity
+            confidence = max_similarity
 
-        if confidence >= self.threshold:
+            if confidence < self.threshold:
+                return None, float(confidence)
+
             identified_user = self.known_users[max_idx]
             user_id = identified_user["id"]
 
-            cache_key = f"recog:{user_id}"
-            cached = redis_client.get(cache_key)
-            if cached:
-                CACHE_HIT.inc()
-                result = json.loads(cached)
-                return (result.get("user"), result.get("confidence", 0.0))
+        cache_key = f"recog:{user_id}"
+        cached = redis_client.get(cache_key)
+        if cached:
+            CACHE_HIT.inc()
+            result = json.loads(cached)
+            return (result.get("user"), result.get("confidence", 0.0))
 
-            redis_client.set(
-                cache_key,
-                json.dumps({"user": identified_user, "confidence": float(confidence)}),
-                settings.CACHE_RECOG_TTL,
-            )
-            return (identified_user, float(confidence))
-        else:
-            return None, float(confidence)
+        redis_client.set(
+            cache_key,
+            json.dumps({"user": identified_user, "confidence": float(confidence)}),
+            settings.CACHE_RECOG_TTL,
+        )
+        return (identified_user, float(confidence))
 
     def verify_user(self, image: np.ndarray) -> Dict:
         start_time = time.time()
