@@ -1,11 +1,19 @@
 import { get, del } from '@/utils/request'
-import type { User } from '@/types/user'
+import type { UserRole } from '@/types/user'
 import type { AttendanceListResponse } from '@/types/attendance'
 import type { DailyStats } from '@/types/statistics'
 
-export interface Profile extends User {
-  role?: string
+export interface Profile {
+  id: number
+  employee_id: string
+  name: string
   department?: string
+  status: number
+  role?: UserRole | string
+  face_encoding_path?: string
+  face_image_path?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export function getProfile(): Promise<Profile> {

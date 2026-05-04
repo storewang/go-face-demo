@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { cancelPendingRequests } from '@/utils/request'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -70,6 +71,8 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
+  cancelPendingRequests()
+
   const title = to.meta.title as string
   if (title) {
     document.title = `${title} - 人脸识别门禁系统`
@@ -78,6 +81,21 @@ router.beforeEach((to, _from, next) => {
   if (to.meta.requiresAuth) {
     const token = localStorage.getItem('admin_token')
     if (!token) {
+      next({ name: 'login', query: { redirect: to.fullPath } })
+      return
+    }
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        localStorage.removeItem('admin_token')
+        localStorage.removeItem('admin_role')
+        localStorage.removeItem('admin_name')
+        next({ name: 'login', query: { redirect: to.fullPath } })
+        return
+      }
+    } catch {
+      localStorage.removeItem('admin_token')
       next({ name: 'login', query: { redirect: to.fullPath } })
       return
     }

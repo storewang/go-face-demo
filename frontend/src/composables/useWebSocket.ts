@@ -83,11 +83,14 @@ export function useWebSocket(options: WebSocketOptions = {}) {
         }
 
         ws.value.onmessage = (event) => {
+          if (typeof event.data !== 'string') {
+            return
+          }
+
           try {
             const data = JSON.parse(event.data)
             lastMessage.value = data
             
-            // 处理设备注册成功消息
             if (data.type === 'registered' && data.data) {
               registeredDevice.value = data.data as RegisterResult
               if (onRegisteredCallback) {
@@ -170,7 +173,7 @@ export function useWebSocket(options: WebSocketOptions = {}) {
     reconnectAttempts.value++
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null
-      connect().catch(() => {})
+      connect(pendingDeviceCode || undefined).catch(() => {})
     }, reconnectInterval)
   }
 

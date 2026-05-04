@@ -5,6 +5,7 @@ export interface Device {
   location?: string
   description?: string
   status: number // 0=offline, 1=online, 2=maintenance
+  is_online?: boolean
   last_heartbeat?: string
   created_at?: string
   updated_at?: string

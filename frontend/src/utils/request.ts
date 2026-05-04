@@ -1,4 +1,4 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse, type AxiosError } from 'axios'
+import axios, { type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse, type AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
 
 const service: AxiosInstance = axios.create({
@@ -9,8 +9,25 @@ const service: AxiosInstance = axios.create({
   }
 })
 
+let pendingControllers = new Set<AbortController>()
+
+function addPendingController(controller: AbortController) {
+  pendingControllers.add(controller)
+}
+
+function removePendingController(controller: AbortController) {
+  pendingControllers.delete(controller)
+}
+
+export function cancelPendingRequests() {
+  pendingControllers.forEach(controller => {
+    controller.abort()
+  })
+  pendingControllers.clear()
+}
+
 service.interceptors.request.use(
-  (config: AxiosRequestConfig) => {
+  (config: InternalAxiosRequestConfig) => {
     if (config.data instanceof FormData) {
       delete config.headers!['Content-Type']
     }
@@ -20,16 +37,27 @@ service.interceptors.request.use(
       config.headers['Authorization'] = `Bearer ${token}`
     }
 
+    if (!config.signal) {
+      const controller = new AbortController()
+      config.signal = controller.signal
+      addPendingController(controller)
+    }
+
     return config
   },
   (error: AxiosError) => {
-    console.error('Request error:', error)
     return Promise.reject(error)
   }
 )
 
 service.interceptors.response.use(
   (response: AxiosResponse) => {
+    if (response.config?.signal instanceof AbortSignal) {
+      pendingControllers.forEach(c => {
+        if (c.signal === response.config.signal) removePendingController(c)
+      })
+    }
+
     const res = response.data
 
     if (response.config.responseType === 'blob') {
@@ -44,6 +72,10 @@ service.interceptors.response.use(
     return res
   },
   (error: AxiosError) => {
+    if (axios.isCancel(error)) {
+      return Promise.reject(error)
+    }
+
     let message = '网络错误，请稍后重试'
 
     if (error.response) {
@@ -55,7 +87,6 @@ service.interceptors.response.use(
         case 401:
           message = '登录已过期，请重新登录'
           localStorage.removeItem('admin_token')
-          // 公开页面（/scan, /register）不跳转登录
           const publicPaths = ['/scan', '/register']
           if (!publicPaths.some(p => window.location.pathname.startsWith(p))) {
             window.location.href = '/login'

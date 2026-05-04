@@ -6,11 +6,13 @@ export interface AttendanceRecord {
   user_id?: number
   employee_id?: string
   name?: string
-  action_type: ActionType
+  action_type: ActionType | string
   confidence?: number
   snapshot_path?: string
-  result: ResultType
+  result: ResultType | string
   created_at: string
+  device_id?: number
+  device_name?: string
 }
 
 export interface AttendanceListResponse {

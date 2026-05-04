@@ -1,4 +1,4 @@
-import { get, post, upload, del } from '@/utils/request'
+import { get, post, del } from '@/utils/request'
 import type { User, UserListResponse } from '@/types/user'
 
 export function getUsers(params?: {
