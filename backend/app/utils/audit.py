@@ -2,9 +2,10 @@
 import hmac
 import hashlib
 import json
+from typing import Optional
 from app.config import settings
 
-def compute_hmac(event_type: str, user_id: int | None, timestamp: str, raw_data: str) -> str:
+def compute_hmac(event_type: str, user_id: Optional[int], timestamp: str, raw_data: str) -> str:
     """计算审计记录的 HMAC-SHA256 签名"""
     message = f"{event_type}|{user_id}|{timestamp}|{raw_data}"
     return hmac.new(
@@ -13,7 +14,7 @@ def compute_hmac(event_type: str, user_id: int | None, timestamp: str, raw_data:
         hashlib.sha256
     ).hexdigest()
 
-def verify_hmac(signature: str, event_type: str, user_id: int | None, timestamp: str, raw_data: str) -> bool:
+def verify_hmac(signature: str, event_type: str, user_id: Optional[int], timestamp: str, raw_data: str) -> bool:
     """验证审计记录签名是否匹配"""
     expected = compute_hmac(event_type, user_id, timestamp, raw_data)
     return hmac.compare_digest(signature, expected)

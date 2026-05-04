@@ -1,7 +1,7 @@
 """审计日志查询 API"""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from app.database import get_db
 from app.utils.auth import get_current_user
@@ -29,7 +29,7 @@ class AuditLogResponse(BaseModel):
         orm_mode = True
 
 class AuditListResponse(BaseModel):
-    items: list[AuditLogResponse]
+    items: List[AuditLogResponse]
     total: int
     page: int
     page_size: int

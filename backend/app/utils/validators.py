@@ -1,4 +1,5 @@
-import imghdr
+from PIL import Image as PILImage
+import io
 import re
 from pathlib import Path
 from typing import Optional
@@ -34,12 +35,17 @@ def validate_image(file_bytes: bytes, filename: str) -> str:
     if len(file_bytes) > MAX_FILE_SIZE:
         return f"文件大小超过限制(最大5MB): {len(file_bytes) / 1024 / 1024:.2f}MB"
 
-    actual_type = imghdr.what(None, file_bytes)
-    if actual_type is None:
+    try:
+        img = PILImage.open(io.BytesIO(file_bytes))
+        img.load()
+        actual_format = img.format.lower() if img.format else ""
+        if actual_format == "jpg":
+            actual_format = "jpeg"
+    except Exception:
         return "无法识别图片格式，请上传JPEG或PNG格式图片"
 
-    if actual_type not in ALLOWED_IMAGE_TYPES:
-        return f"不支持的图片格式: {actual_type}，仅支持JPEG和PNG"
+    if actual_format not in ALLOWED_IMAGE_TYPES:
+        return f"不支持的图片格式: {actual_format}，仅支持JPEG和PNG"
 
     try:
         import numpy as np

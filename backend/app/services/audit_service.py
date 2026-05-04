@@ -1,6 +1,7 @@
 """审计日志写入服务"""
 import json
 from datetime import datetime
+from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.audit import AuditLog
 from app.utils.audit import compute_hmac
@@ -15,13 +16,13 @@ class AuditService:
         self,
         db: Session,
         event_type: str,
-        user_id: int | None = None,
-        employee_id: str | None = None,
-        user_name: str | None = None,
-        device_id: int | None = None,
-        confidence: float | None = None,
-        snapshot_path: str | None = None,
-        extra_data: dict | None = None,
+        user_id: Optional[int] = None,
+        employee_id: Optional[str] = None,
+        user_name: Optional[str] = None,
+        device_id: Optional[int] = None,
+        confidence: Optional[float] = None,
+        snapshot_path: Optional[str] = None,
+        extra_data: Optional[dict] = None,
     ) -> AuditLog:
         """记录审计事件"""
         raw_data = json.dumps(extra_data or {}, ensure_ascii=False)
